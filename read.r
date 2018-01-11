@@ -7,7 +7,6 @@ library(ggplot2)
 library(haven)
 library(readr)
 
-
 AFCARS<-fread("afcars-deport00-15.csv")
 AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==1, "hispanic",
                         ifelse((AFCARS$HISORGIN==2)||(AFCARS$HISORGIN==0), "non-hispanic",
@@ -41,15 +40,11 @@ pop<-left_join(pop%>%
                  group_by(year, FIPS, hispanic)%>%
                  summarise(adult_pop=sum(pop)))
 
+pop<-pop%>%
+  rename(HISORGIN=hispanic)%>%
+  mutate(HISORGIN=ifelse(HISORGIN==1, "hispanic",
+                ifelse(HISORGIN==0, "non-hispanic",
+                       NA)))
 #create county for latinx kid population, non-latinx
-
-pop_wide<-left_join(pop%>%
-                      select(-adult_pop)%>%
-                      spread(hispanic, child_pop, fill=0)%>%
-                      rename(child_pop=`0`, hisp_child_pop=`1`),
-                    pop%>%
-                      select(-child_pop)%>%
-                      spread(hispanic, adult_pop, fill=0)%>%
-                      rename(adult_pop=`0`, hisp_adult_pop=`1`))
 
 gc()
