@@ -45,6 +45,47 @@ pop<-pop%>%
   mutate(HISORGIN=ifelse(HISORGIN==1, "hispanic",
                 ifelse(HISORGIN==0, "non-hispanic",
                        NA)))
-#create county for latinx kid population, non-latinx
 
-gc()
+s_comm<-read_csv("countySComm.csv")
+s_comm<-s_comm%>%
+  mutate(FIPS=as.numeric(FIPS),
+         s_comm_active=TRUE,
+         year=Scomm_yr)
+
+#### want to have an active = T time series variable
+#### so loop over counties, create new entries for each year between Scomm_yr[i] 
+#### and max(Scomm_yr)
+max_yr<-max(s_comm$Scomm_yr)
+for(i in 1:nrow(s_comm)){
+  diff<-max_yr - s_comm$Scomm_yr[i]
+  if(diff!=0){
+    new_rows<-s_comm[i,]
+    temp<-new_rows
+    for(j in 1:diff){
+      temp$year<-temp$year+1
+      new_rows<-bind_rows(new_rows, temp)
+    }
+  }
+  new_rows<-new_rows[-1,]
+  s_comm<-bind_rows(s_comm, new_rows)
+}
+
+s_comm<-s_comm%>%
+  arrange(FIPS)
+
+cnty_yr<-expand.grid(unique(s_comm$FIPS), 
+                     unique(s_comm$Scomm_yr))
+
+cnty_yr<-cnty_yr%>%
+  rename(FIPS=Var1,
+         year=Var2)
+
+s_comm_full<-left_join(cnty_yr,
+                       s_comm)%>%
+  arrange(FIPS)%>%
+  select(-State, -Area_Name)%>%
+  mutate(s_comm_active=ifelse(is.na(s_comm_active), FALSE, s_comm_active))
+
+### START HERE - MAX SCOMM_MO AND SCOMM_YR CONSISTENT FOR ALL YEARS
+          
+save.image("AFCARS.Rdata")
