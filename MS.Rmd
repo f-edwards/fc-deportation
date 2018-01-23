@@ -1,0 +1,544 @@
+---
+title: "FC-Deportation EDA"
+author: "Frank and Matt"
+date: "January 11, 2018"
+output: pdf_document
+---
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
+# source("read.r") #### to read in data files if starting from scratch
+library(data.table)
+library(tidyverse)
+library(haven)
+library(maps)
+load("AFCARS.Rdata")
+
+pop<-pop%>%
+  filter(year>1999)
+
+```
+
+```{r transform}
+
+
+################# for entries by first entry, by incapacitation
+### lots of missing data on incap_index
+cnty_entries<-AFCARS%>%
+  group_by(STATE, FIPSCODE, FY, HISORGIN, incap_index, first_entry)%>%
+  filter(Entered==1)%>%
+  count()%>%
+  rename("entries"=n)%>%
+  rename(year=FY, FIPS=FIPSCODE)%>%
+  ungroup()
+
+cnty_entries<-cnty_entries%>%
+  left_join(AFCARS%>%
+  group_by(STATE, FIPSCODE, FY, HISORGIN, incap_index, first_entry)%>%
+  count()%>%
+  rename("caseload"=n)%>%
+  rename(year=FY, FIPS=FIPSCODE)%>%
+  ungroup())
+
+##### check against kids count data. MATCHES ON TX
+# test<-cnty_entries%>%
+#   group_by(STATE, year, HISORGIN)%>%
+#   summarise(entries=sum(entries)) 
+
+cnty287g<-read_dta("county287g.dta")
+cnty287g$countyid<-as.numeric(cnty287g$countyid)
+cnty287g$year<-as.numeric(cnty287g$year)
+cnty287g$c287active<-as.logical(cnty287g$c287active)
+cnty287g<-cnty287g%>%
+  rename(FIPS=countyid)%>%
+  mutate(c287_everapplied=TRUE)
+
+### join on all with ever application
+#dat<-left_join(cnty_entries, cnty287g)
+
+dat<-cnty_entries%>%
+  filter(STATE!=72)%>%
+  mutate(FIPS=ifelse(FIPS==9, NA, FIPS))
+
+data(state.fips)
+
+state.fips<-state.fips%>%
+  rename(STATE=fips,
+         stname=abb)%>%
+  select(STATE, stname)
+
+state.fips<-rbind(state.fips, 
+                  c(2, "AK"), c(15, "HI"))%>%
+  distinct()
+
+state.fips$STATE<-as.integer(state.fips$STATE)
+
+dat<-dat%>% ### get abbreviations for plotting
+  left_join(state.fips)
+
+### use AFCARS for state fips crosswalk w/county fips
+pop<-pop%>%
+  rename(stname=state)%>%
+  left_join(state.fips)
+
+#### read s comm data from Matt
+scomm<-read_csv("countySComm.csv")
+scomm<-scomm%>%
+  rename(stname=State,
+         countyname=Area_Name)%>%
+  mutate(FIPS=as.integer(FIPS))
+
+### failed matches: use pop as reference
+z<-scomm[- which(scomm$FIPS%in%pop$FIPS), "FIPS"]
+z1<-dat[- which(dat$FIPS%in%pop$FIPS), "FIPS"]
+failed<-rbind(z, z1)%>%
+  distinct()
+
+#### DROP FOR NOW, come back and fix these. mapping available at
+#### DROPPED FIPS ARE 2158 (<-2270), 46102, 51019, NA, 51515, 51560
+# https://www.cdc.gov/nchs/nvss/bridged_race/county_geography-_changes2015.pdf
+
+recode_FIPS<-function(x){
+  x$FIPS<-ifelse(x$FIPS == 2270, 
+                        2158,
+                 ifelse(x$FIPS == 46113,
+                        46102,
+                 ifelse(x$FIPS == 2201,
+                        2130,
+                 ifelse(x$FIPS == 2280,
+                        2195,
+                 x$FIPS))))
+  return(x)
+}
+
+dat<-recode_FIPS(dat); pop<-recode_FIPS(pop); scomm<-recode_FIPS(scomm); cnty287g<-recode_FIPS(cnty287g)
+
+#dat<-dat[-which(dat$FIPS%in%failed$FIPS),]
+
+#z2<-which(!(scomm$FIPS%in%dat$FIPS))
+
+
+```
+
+## EDA AND VISUALS
+
+### Entry rates and caseloads
+
+There's a clear downward trend in entry rates for Latino kids from '05 to '15 that looks similar to the rate for other kids. In the state plot (note the sqrt scale on the y axis for the state plots to make them more interpretable), there's not a clear temporal trend across states, though some jumping around in select states. Note that there looks like a slight downward trend in those states with high Latino entry rates.
+
+```{r placement_rates}
+## line plot on entries pc by year by ever applied, by denied, by active
+### CRAP - ALL MY NUMBERS WERE WRONG, NEED TO left_join on pop dynamically, can't sum in long form
+
+natl_entries<-dat%>%
+         group_by(year, HISORGIN)%>%
+         summarise(entries=sum(entries))%>%
+         left_join(pop%>%
+                     group_by(year, HISORGIN)%>%
+                   summarise(child_pop = sum(child_pop)))%>%
+         mutate(entry_rate=(entries/child_pop) * 1000)
+
+ggplot(natl_entries,
+       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Foster care entries per 1,000 children")
+
+st_entries<-dat%>%
+         group_by(stname, year, HISORGIN)%>%
+         summarise(entries=sum(entries))%>%
+         left_join(pop%>%
+                     group_by(stname, year, HISORGIN)%>%
+                   summarise(child_pop = sum(child_pop)))%>%
+         mutate(entry_rate=(entries/child_pop) * 1000)
+
+ggplot(st_entries, 
+            aes(x=(year-2000), y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  scale_y_sqrt()+
+  xlab("Year")+
+  ylab("Foster care entries per 1,000 children")+
+  facet_wrap(~stname)
+```
+
+For counts of entries, the story is a little different. There's been aabout a 20 percent uptick in entries between 2000 and 2015, though data quality is iffy in the 2000 - 2003 period. Starting in 2004, we're looking at a much more modest 4 percent increase over 04-15, with a max at 75,000 in '06, up 20 percent from '04. 
+
+```{r counts}
+ggplot(dat%>%
+         group_by(year)%>%
+         filter(HISORGIN=="hispanic")%>%
+         summarise(entries=sum(entries)),
+       aes(x=year-2000, y=entries))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Latino Foster care placements")
+
+```
+
+Caseloads (all kids in the system, not just entries, includes long-term stayers) look pretty similar. For states, the trend looks largely flat or downward over the '00-'15 period.
+
+```{r caseload_rates}
+cl_nat<-dat%>%
+         group_by(year, HISORGIN)%>%
+         summarise(caseload=sum(caseload))%>%
+  left_join(pop%>%
+              group_by(year, HISORGIN)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(caseload_rate=1000 * (caseload/child_pop))
+
+ggplot(cl_nat,
+       aes(x=year-2000, y=caseload_rate, col=HISORGIN))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Foster care caseloads per 1,000 children")
+
+cl_state<-dat%>%
+         group_by(year, HISORGIN, stname)%>%
+         summarise(caseload=sum(caseload))%>%
+  left_join(pop%>%
+              group_by(year, HISORGIN, stname)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(caseload_rate=1000 * (caseload/child_pop))
+
+ggplot(cl_state,
+       aes(x=year-2000, y=caseload_rate, col=HISORGIN))+
+  geom_line()+
+  scale_y_sqrt()+
+  xlab("Year")+
+  ylab("Foster care caseloads per 1,000 children")+
+  facet_wrap(~stname)
+```
+
+### Entries due to parental incapacitation
+
+I've experimented with two specifications for the incapacitation indicator. One grouped removal reason codes for incarceration, abandonment, and relinquishment (my initial setup). The one presented here is more liberal, following Amuedo-Dorantes and Arenas-Arroyo, and includes the prior codes plus caretaker inability to cope and inadequate housing. If you want to poke around on these individual variables, I've got a data explorer with all of these measures individually up at https://fedwards.shinyapps.io/afcars-table/
+
+The trend that I'm seeing for incapacitation entries, the TRUE panel, for Latino kids over this time period is largely flat. I'm a little concerned here, because this should match Amuedo-Dorantes and Arenas-Arroyo's Figure 3 in the draft you shared with me. The descriptives they they present in Table 1 for the foster care numbers are in the code output, along with my numbers. The mean looks pretty darn close, but they've got at least one outlier in there (the max value) that I'm not sure about. That set of extreme cases could drive their trend, but I don't know where it could've come from. The only possibility is that I'm excluding Puerto Rico, maybe they aren't? Regardless, the trend lines look pretty different in our numbers.
+
+```{r descriptives}
+st_incap<-dat%>%
+         group_by(HISORGIN, year, stname)%>%
+         filter(incap_index==TRUE)%>%
+         summarise(entries=sum(entries))%>%
+  left_join(pop%>%
+              group_by(HISORGIN, year, stname)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(entry_rate=1000*(entries/child_pop))%>%
+  ungroup()
+                     
+
+st_incap_subset<-st_incap%>%filter(HISORGIN=="hispanic")%>%
+  filter(year>2000)
+
+st_incap_subset%>%
+  summarise(mean=mean(entry_rate), sd=sd(entry_rate), min=min(entry_rate), max=max(entry_rate),
+            n=n())
+
+print("Amuedo-Dorantes and Arenas-Arroyo's descriptives")
+print("mean=1.212, SD=2.143, min=0, max=41.366, n=733")
+
+```
+
+```{r incap_plots}
+incap_nat<-dat%>%
+         group_by(HISORGIN, incap_index, year)%>%
+         summarise(entries=sum(entries))%>%
+  left_join(pop%>%
+              group_by(HISORGIN, year)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(entry_rate=1000 * (entries / child_pop))
+
+
+ggplot(incap_nat,
+       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  facet_wrap(~incap_index)+
+  ggtitle("Incapacitation entries (TRUE), non-missing (FALSE), missing (NA)")
+
+incap_st<-dat%>%
+  filter(incap_index==TRUE)%>%
+         group_by(HISORGIN,  year, stname)%>%
+         summarise(entries=sum(entries))%>%
+  left_join(pop%>%
+              group_by(HISORGIN, year, stname)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(entry_rate=1000 * (entries / child_pop))
+
+ggplot(incap_st,
+       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  scale_y_sqrt()+
+  facet_wrap(~stname)+
+  ggtitle("Incapacitation entries")
+```
+
+### First entries, parental incapacitation
+
+Nothing too remarkable here, trends for rates going up for non-Latino kids after '10, down for Latino kids.
+
+```{r first_entry}
+first_nat<-dat%>%
+         group_by(HISORGIN, year)%>%
+         filter(incap_index==TRUE,
+                first_entry==TRUE)%>%
+         summarise(entries=sum(entries))%>%
+  left_join(pop%>%
+              group_by(HISORGIN, year)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(entry_rate=1000*entries/child_pop)
+
+ggplot(first_nat,
+       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  ylab("Entries per 1,000")+
+  ggtitle("First entry, due to parental incapacitation")
+  
+first_st<-dat%>%
+         group_by(HISORGIN, year, stname)%>%
+         filter(incap_index==TRUE,
+                first_entry==TRUE)%>%
+         summarise(entries=sum(entries))%>%
+  left_join(pop%>%
+              group_by(HISORGIN, year, stname)%>%
+              summarise(child_pop=sum(child_pop)))%>%
+  mutate(entry_rate=1000*entries/child_pop)
+
+ggplot(first_st,
+       aes(x=year-2000, y=sqrt(entry_rate*1000), col=HISORGIN))+
+  geom_line()+
+  facet_wrap(~stname)+
+  scale_y_log10()+
+  ylab("Entries per 1,000")+
+  ggtitle("First entry, due to parental incapacitation")
+
+
+```
+
+### baseline 287g plots
+
+Active and inactive counties do appear very different in intercepts, but trends look similar. When restricted to incapacitation foster care entries, we see an uptick in entries for both Latino and other kids in 287(g) counties, and a clear downward trend in others. Open question about whether that's just an uptick in law enforcement activity in general in these places?
+
+```{r 287g_plots}
+entries_287<-cnty287g%>%
+  left_join(left_join(cnty287g, pop)%>%
+  group_by(FIPS, HISORGIN, year)%>%
+  summarise(child_pop=sum(child_pop)))%>%
+  left_join(dat%>%
+              group_by(FIPS, year, HISORGIN)%>%
+              summarise(entries=sum(entries)))%>%
+  mutate(entries=ifelse(is.na(entries), 0, entries))
+
+c287_nat<-entries_287%>%
+  group_by(c287active, year, HISORGIN)%>%
+  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
+            entries = sum(entries))
+
+entries_287_incap<-cnty287g%>%
+  left_join(left_join(cnty287g, pop)%>%
+  group_by(FIPS, HISORGIN, year)%>%
+  summarise(child_pop=sum(child_pop)))%>%
+  left_join(dat%>%
+              filter(incap_index==TRUE)%>%
+              group_by(FIPS, year, HISORGIN)%>%
+              summarise(entries=sum(entries)))%>%
+  mutate(entries=ifelse(is.na(entries), 0, entries))
+
+c287_nat_incap<-entries_287_incap%>%
+  group_by(c287active, year, HISORGIN)%>%
+  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
+            entries = sum(entries))
+
+ggplot(c287_nat, 
+            aes(x=year, y=entry_rate, col=c287active, linetype=HISORGIN))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Latino foster care entries per 1,000 children")
+
+ggplot(c287_nat_incap, 
+            aes(x=year, y=entry_rate, col=c287active, linetype=HISORGIN))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Latino foster care entries (parental incapacitation) per 1,000 children")
+
+ggplot(c287_nat_incap, 
+            aes(x=year, y=entries, col=c287active, linetype=HISORGIN))+
+  geom_line()+
+  xlab("Year")+
+  ylab("Latino foster care entries (parental incapacitation)")
+```
+
+### event plots
+
+Here are some event plots, the boxplot is the distribution of all counties with an ever-active program pre and post implementation, then a national aggregation, then a by county time series plot. Still surprising that there isn't a clear trend, but Amuedo-Dorantes and Arenas-Arroyo found that Secure Communities was carrying the load in their models, may be the same case here. I'll move the analysis in that direction next.
+
+```{r 287g_event}
+entries_287_event<-cnty287g%>%
+  left_join(left_join(cnty287g, pop)%>%
+  group_by(FIPS, HISORGIN, year)%>%
+  summarise(child_pop=sum(child_pop)))%>%
+  left_join(dat%>%
+              group_by(FIPS, year, HISORGIN)%>%
+              summarise(entries=sum(entries)))%>%
+  mutate(entries=ifelse(is.na(entries), 0, entries),
+         entry_rate=entries/child_pop * 1000)%>%
+  filter(c287deny==0)%>%
+  mutate(event_year=year - c287start_yr)%>%
+  filter(-4<event_year, event_year<4)%>%
+  filter(!(is.na(event_year)))
+
+# entries_quantiles<-entries_287_event%>%
+#   group_by(event_year, HISORGIN)%>%
+#   summarise(median=median(entry_rate),
+#             upper75=quantile(entry_rate, 0.75),
+#             lower25=quantile(entry_rate,0.25))
+
+ggplot(entries_287_event,
+       aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
+  geom_boxplot()+
+  ggtitle("Ditribution of entry rates centered on 287g active")
+
+c287_nat_event<-entries_287_event%>%
+  group_by(event_year, HISORGIN)%>%
+  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
+            entries = sum(entries),
+            cases=n())
+
+ggplot(c287_nat_event, 
+            aes(x=event_year, y=entry_rate, col=HISORGIN))+
+  geom_line()+
+  geom_vline(xintercept = 0)+
+  xlab("Year, centered on 287g active")+
+  ylab("Latino foster care entries per 1,000 children")
+
+ggplot(entries_287_event,
+       aes(x=event_year, y=entry_rate, col=HISORGIN))+
+    geom_vline(xintercept = 0)+
+  geom_line()+
+  facet_wrap(~countyname)
+
+
+```
+
+##Secure communities
+
+```{r s_comm_setup}
+
+scomm_dat<-dat%>%
+  left_join(scomm%>%
+              select(-stname))%>%
+  mutate(scomm_event_time=year - Scomm_yr)%>%
+  select(-Scomm_mo, - Scomm_yr)
+
+cnty_scomm_event<-scomm%>%
+  left_join(left_join(scomm, pop)%>%
+  group_by(FIPS, HISORGIN, year)%>%
+  summarise(child_pop=sum(child_pop)))%>%
+  left_join(dat%>%
+              group_by(FIPS, year, HISORGIN)%>%
+              summarise(entries=sum(entries)))%>%
+  mutate(entries=ifelse(is.na(entries), 0, entries),
+         entry_rate=entries/child_pop * 1000)%>%
+  mutate(event_year=year - Scomm_yr)%>%
+  filter(child_pop>10)
+
+natl_scomm_event<-cnty_scomm_event%>%
+  group_by(event_year, HISORGIN)%>%
+  summarise(entry_rate = sum(entries)/sum(child_pop))%>%
+  filter(event_year>-5, event_year<5, !(is.na(event_year)))
+
+ggplot(natl_scomm_event,
+       aes(x=event_year, 
+           y=entry_rate,
+           col=HISORGIN))+
+  geom_line()+
+  geom_vline(xintercept=0)+
+  ggsave("s_comm_natl.png")
+
+ggplot(cnty_scomm_event%>%
+           filter(event_year>-5, event_year<5, !(is.na(event_year))),
+       aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
+  geom_boxplot()+
+  coord_cartesian(ylim=c(0, 10))+
+  ggtitle("Ditribution of entry rates centered on s-comm active")+
+  ggsave("s_comm_event_box.png")
+
+```
+
+```{r basic_models}
+
+# cnty_scomm_event<-cnty_scomm_event%>%
+#   mutate(scomm_active = year >= Scomm_yr)
+# 
+# library(MASS)
+# 
+# ### for total entries
+# tot_ols_0<-lm(entry_rate ~ scomm_active * (HISORGIN == "hispanic") + 
+#                   year + I(year^2),
+#                 data=cnty_scomm_event)
+# 
+# tot_count_0<-glm.nb(entries ~ scomm_active * (HISORGIN == "hispanic") + 
+#                   year + I(year^2) + offset(log(child_pop)),
+#                 data=cnty_scomm_event)
+# 
+# ### observed v fitted - negbin
+# t<-predict(tot_count_0)
+# plot(cnty_scomm_event$entries, exp(t))
+# abline(0,1)
+# 
+# ### observed v fitted - ols
+# s<-predict(tot_ols_0) * cnty_scomm_event 
+# plot(cnty_scomm_event$entry_rate * cnty_scomm_event$child_pop, s^2 * cnty_scomm_event$child_pop)
+# abline(0,1)
+# 
+# tot_ols_fe<-lm(entry_rate ~ scomm_active * (HISORGIN == "hispanic") + 
+#                   year + I(year^2),
+#                 data=cnty_scomm_event)
+# 
+# tot_count_fe<-glm.nb(entries ~ scomm_active * (HISORGIN == "hispanic") + 
+#                   year + I(year^2) + offset(log(child_pop)),
+#                 data=cnty_scomm_event)
+# 
+# 
+
+
+```
+
+
+## Hypotheses
+
+Just notes to self here
+
+1. Deportation -> more total entries
+  + Deportation -> more first entries
+  + Deportation -> more total entries, incapacitation cause
+2. Deportation -> higher caseloads
+  + Deportation -> fewer reunification exits
+3. Deportation -> lower community reporting
+
+## Next steps
+
+Contact, community reporting, exits, scomm
+
+who are we missing? what happens to the kids? kin care? custodial transfer? 
+undercoverage of kin care in census correlated with census participation - 
+
+family complexity in census for 
+
+to do 
+
+filter out maltreatment cases
+set up similar visuals for s-comm
+pull in ncands data
+
+MATT WILL do 
+complex families stuff
+
+Irene Vega - has interviewed ice agents, what happens to kids
+
+aggressive counties: charlotte NC, post 2006-09 Alabama, GA, NC, SC, AZ, most aggressive places
+
+taskforce type agreement is most aggressive - jail model least aggressive: not cleanly identified policies, proxies for increased enforcement
+
+check on ever active and denied - 
+
+child poverty - free/reduced lunch - what measures wouldn't be affected by undercounts - free-reduced lunch receipt is easy, no verification - NCES common core data for free-reduced districts -> counties
+
