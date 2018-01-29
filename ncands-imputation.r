@@ -3,69 +3,76 @@ rm(list=ls())
 gc()
 library(dplyr)
 library(tidyr)
-library(ggplot2)
-library(haven)
 library(readr)
 library(mice)
 library(pan)
+set.seed(1)
 
-setwd("Y:/NDACAN/NDACAN-RA/fre9/fc-deportation")
-AFCARS<-read_csv("./data/afcars-deport00-16.csv", na="NULL")
+ncands<-read_csv("./data/ncands-comm-reports-individual.csv", na="NULL")
 
-AFCARS<-AFCARS%>%
-  filter(!(is.na(FIPSCODE)), FIPSCODE!=9)
+pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
+pop<-pop%>%
+  select(-adult_pop, -state)%>%
+  spread(HISORGIN, child_pop)%>%
+  rename(child_hispanic=hispanic, child_nonhispanic=`non-hispanic`)
 
-AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==3, NA,
-                        ifelse((AFCARS$HISORGIN==2)|(AFCARS$HISORGIN==0), "non-hispanic",
-                               ifelse(AFCARS$HISORGIN==1, "hispanic",
-                                      AFCARS$HISORGIN)))
+ncands$cethn<-factor(ncands$cethn, levels=c(1, 2, 3, 9),
+                     labels = c("hispanic", 
+                                "non-hispanic",
+                                "unable",
+                                "missing"))
+
+ncands$cethn[which((ncands$cethn=="unable")|(ncands$cethn=="missing"))]<-NA
+gc()
+ncands$cethn<-factor(as.character(ncands$cethn))
 gc()
 
-### Filter out cases with any cat not relevant, should give upper bound on incap removals 
-### abuse _index<- [PHYABUSE, SEXABUSE, AAPARENT, DAPARENT, AACHILD, DACHILD, CHILDIS, PRTSDIED]
-AFCARS$abuse<-with(AFCARS, (PHYABUSE==1) | 
-                          (SEXABUSE==1) | 
-                          (AAPARENT==1) | 
-                          (DAPARENT==1) | 
-                          (AACHILD==1) | 
-                          (DACHILD==1) | 
-                          (CHILDIS==1) | 
-                          (PRTSDIED==1))
-
-AFCARS$first_entry<- (AFCARS$Entered==1) &
-  (AFCARS$TotalRem==1) ### Entered is never missing, NA&FALSE = FALSE
-
-AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1, 
-                         TRUE, 
-                         ifelse((AFCARS$DISREASN==99) & (AFCARS$Exited == 1), 
-                                NA,
-                                FALSE))
-
-AFCARS<-AFCARS%>%
-  select(FY, STATE, FIPSCODE,
-         HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
+ncands$comm_report[which(ncands$miss_report==1)]<-NA
+ncands<-ncands%>%
+  select(-miss_report)
 gc()
+
+ncands$comm_report<-ncands$comm_report==1
+
+ncands<-ncands%>%
+  rename(year = subyr,
+         FIPS = RptFIPS,
+         HISORGIN = cethn)%>%
+  mutate(FIPS=as.numeric(FIPS))
+
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
 # AFCARS.imp<-amelia(AFCARS, m = 3,
 #                    p2s = 1, idvars = c("STATE", "FIPSCODE"),
 #                    noms = c("HISORGIN"))
 
-samp<-sample(1:nrow(AFCARS), 1000, replace=F)
-AFCARS.test<-AFCARS[samp,]
+fips_samp<-sample(sample(unique(ncands$FIPS)), 100, replace=F)
 
-ind.clust<-2
-ini<-mice(AFCARS.test, m=1, maxit = 0)
+samp<-ncands%>%
+  filter(FIPS%in%fips_samp)
+
+samp<-samp[sample(1:nrow(samp), 100000, replace=F), ]
+samp<-samp%>%
+  mutate(FIPS=as.numeric(FIPS))
+
+samp<-left_join(samp, pop)%>%
+  filter(!(is.na(child_hispanic)))
+
+samp$FIPS<-factor(samp$FIPS)
+ini<-mice(samp, m=1, maxit = 0)
 pred<-ini$pred
-pred["HISORGIN", ]<-c(2, -2, 2, 0, 2, 2, 2, 2)
-pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
-pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
-pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
-method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
-#rm(ini)
+#pred["cethn",]<-c(1, -2, 0, 1)
+#meth<-c("", "", "2l.norm", "")
+
 gc()
-imp_test<-mice(AFCARS.test, pred=pred, method = method, print=TRUE)
+imp_test<-mice(samp, 
+               pred=pred, 
+               #method = meth, 
+               print=TRUE, 
+               m=5,
+               maxit=1)
 gc()
+
 save.image("mice-test.Rdata")
 
 # AFCARS<-AFCARS.imp$imputations[[1]]
