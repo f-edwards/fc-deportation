@@ -15,11 +15,11 @@ library(maps)
 ### set imputation n variable
 n_imp<-3
 ### set up data as list
-AFCARS<-read_csv(paste("afcars-imp", 1, ".csv", sep=""))
+AFCARS<-read_csv(paste("./data/afcars-imp", 1, ".csv", sep=""))
 AFCARS<-AFCARS%>%
   mutate(data=paste("imp1"))
 for(i in 2:n_imp){
-  temp<-read_csv(paste("afcars-imp", i, ".csv", sep=""))
+  temp<-read_csv(paste("./data/afcars-imp", i, ".csv", sep=""))
   temp<-temp%>%
     mutate(data=paste("imp", i, sep=""))
   AFCARS<-bind_rows(AFCARS, temp)
@@ -141,7 +141,7 @@ state_entries<-left_join(state_entries%>%
 #   facet_wrap(~STATE)
 ### make imputation bounds
 
-s_comm<-read_csv("countySComm.csv")
+s_comm<-read_csv("./data/countySComm.csv")
 s_comm<-s_comm%>%
   mutate(FIPS=as.numeric(FIPS),
          s_comm_active=TRUE,
@@ -183,7 +183,7 @@ s_comm_full<-left_join(cnty_yr,
 
 ### START HERE - MAX SCOMM_MO AND SCOMM_YR CONSISTENT FOR ALL YEARS
 
-cnty287g<-read_dta("county287g.dta")
+cnty287g<-read_dta("./data/county287g.dta")
 cnty287g$countyid<-as.numeric(cnty287g$countyid)
 cnty287g$year<-as.numeric(cnty287g$year)
 cnty287g$c287active<-as.logical(cnty287g$c287active)
@@ -222,11 +222,26 @@ pop<-pop%>%
   left_join(state.fips)
 
 #### read s comm data from Matt
-scomm<-read_csv("countySComm.csv")
+scomm<-read_csv("./data/countySComm.csv")
 scomm<-scomm%>%
   rename(stname=State,
          countyname=Area_Name)%>%
   mutate(FIPS=as.integer(FIPS))
+
+
+ncands<-read_csv("./data/ncands-comm-reports.csv", na="NULL")
+ncands_complete<-expand.grid(unique(ncands$subyr), 
+                             unique(ncands$RptFIPS), 
+                             unique(ncands$cethn))%>%
+  rename(subyr=Var1, RptFIPS=Var2, cethn=Var3)
+### join on full list to include zeroes
+ncands_complete<-full_join(ncands_complete, ncands)%>%
+  mutate(total_reports = ifelse(is.na(total_reports), 0, total_reports),
+         comm_report = ifelse(is.na(comm_report), 0, comm_report))
+### mutate to character variables
+ncands_complete<-ncands_complete%>%
+  mutate()
+
 
 ### failed matches: use pop as reference
 z<-scomm[- which(scomm$FIPS%in%pop$FIPS), "FIPS"]
@@ -253,17 +268,5 @@ recode_FIPS<-function(x){
 
 dat<-recode_FIPS(dat); pop<-recode_FIPS(pop); scomm<-recode_FIPS(scomm); cnty287g<-recode_FIPS(cnty287g)
 
-ncands<-read_csv("ncands-comm-reports.csv", na="NULL")
-ncands_complete<-expand.grid(unique(ncands$subyr), 
-                             unique(ncands$RptFIPS), 
-                             unique(ncands$cethn))%>%
-  rename(subyr=Var1, RptFIPS=Var2, cethn=Var3)
-### join on full list to include zeroes
-ncands_complete<-full_join(ncands_complete, ncands)%>%
-  mutate(total_reports = ifelse(is.na(total_reports), 0, total_reports),
-         comm_report = ifelse(is.na(comm_report), 0, comm_report))
-### mutate to character variables
-ncands_complete<-ncands_complete%>%
-  mutate()
 
 #### merge pop onto the county, state, natl files
