@@ -46,30 +46,30 @@ ncands<-ncands%>%
 #                    p2s = 1, idvars = c("STATE", "FIPSCODE"),
 #                    noms = c("HISORGIN"))
 
-fips_samp<-sample(sample(unique(ncands$FIPS)), 100, replace=F)
+# fips_samp<-sample(sample(unique(ncands$FIPS)), 100, replace=F)
+# 
+# samp<-ncands%>%
+#   filter(FIPS%in%fips_samp)
+# 
+# samp<-samp[sample(1:nrow(samp), 100000, replace=F), ]
+# samp<-samp%>%
+#   mutate(FIPS=as.numeric(FIPS))
 
-samp<-ncands%>%
-  filter(FIPS%in%fips_samp)
-
-samp<-samp[sample(1:nrow(samp), 100000, replace=F), ]
-samp<-samp%>%
-  mutate(FIPS=as.numeric(FIPS))
-
-samp<-left_join(samp, pop)%>%
+merge<-left_join(ncands, pop)%>%
   filter(!(is.na(child_hispanic)))
 
-samp$FIPS<-factor(samp$FIPS)
-ini<-mice(samp, m=1, maxit = 0)
+merge$FIPS<-factor(merge$FIPS)
+ini<-mice(merge, m=1, maxit = 0)
 pred<-ini$pred
 #pred["cethn",]<-c(1, -2, 0, 1)
 #meth<-c("", "", "2l.norm", "")
 
 gc()
-imp_test<-mice(samp, 
+imp_test<-mice(merge, 
                pred=pred, 
                #method = meth, 
                print=TRUE, 
-               m=5,
+               m=1,
                maxit=1)
 gc()
 
@@ -78,8 +78,3 @@ save.image("mice-test.Rdata")
 # AFCARS<-AFCARS.imp$imputations[[1]]
 # rm(AFCARS.imp)
 gc()
-
-save.image("AFCARS-no-abuse-imputation.Rdata")
-
-write.amelia(AFCARS.imp, separate = TRUE, file.stem = "afcars-imp",
-             extension = ".csv")
