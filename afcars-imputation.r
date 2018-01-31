@@ -76,6 +76,7 @@ AFCARS.test<-AFCARS[samp,]
 ind.clust<-2
 ini<-mice(AFCARS.test, m=1, maxit = 0)
 pred<-ini$pred
+pred[, "STATE"]<-rep(0, nrow(pred))
 # pred["HISORGIN", ]<-c(1, -2, 0, 0, 1, 1, 1, 1, 1, 1)
 # pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
 # pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
@@ -83,8 +84,11 @@ pred<-ini$pred
 # method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
 #rm(ini)
 gc()
-imp_test<-mice(AFCARS, pred=pred, 
+imp_test<-mice(AFCARS, 
+               pred=pred, 
                #method = method, 
+               m=1,
+               maxit=1,
                print=TRUE)
 gc()
 save.image("mice-test.Rdata")
