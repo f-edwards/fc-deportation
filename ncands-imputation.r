@@ -1,11 +1,11 @@
 #.rs.restartR()
 rm(list=ls())
 gc()
-library(dplyr)
-library(tidyr)
-library(readr)
+
 library(mice)
 library(pan)
+library(tidyverse)
+
 set.seed(1)
 
 ncands<-read_csv("./data/ncands-comm-reports-individual.csv", na="NULL")
@@ -40,12 +40,10 @@ ncands<-ncands%>%
          HISORGIN = cethn)%>%
   mutate(FIPS=as.numeric(FIPS))
 
+ncands_test<-ncands%>%filter(year ==2014)
+
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
-# AFCARS.imp<-amelia(AFCARS, m = 3,
-#                    p2s = 1, idvars = c("STATE", "FIPSCODE"),
-#                    noms = c("HISORGIN"))
-
 # fips_samp<-sample(sample(unique(ncands$FIPS)), 100, replace=F)
 # 
 # samp<-ncands%>%
@@ -55,7 +53,7 @@ ncands<-ncands%>%
 # samp<-samp%>%
 #   mutate(FIPS=as.numeric(FIPS))
 
-merge<-left_join(ncands, pop)%>%
+merge<-left_join(ncands_test, pop)%>%
   filter(!(is.na(child_hispanic)))
 
 merge$FIPS<-factor(merge$FIPS)
@@ -74,7 +72,7 @@ imp_test<-mice(merge,
 gc()
 
 save.image("mice-test.Rdata")
-
+q(save="no")
 # AFCARS<-AFCARS.imp$imputations[[1]]
 # rm(AFCARS.imp)
 gc()

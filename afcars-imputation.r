@@ -10,10 +10,22 @@ library(mice)
 library(pan)
 
 setwd("Y:/NDACAN/NDACAN-RA/fre9/fc-deportation")
+
+pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
+
+pop<-pop%>%
+  select(-adult_pop, -state)%>%
+  spread(HISORGIN, child_pop)%>%
+  rename(child_hispanic=hispanic, child_nonhispanic=`non-hispanic`,
+         FIPSCODE=FIPS,
+         FY=year)
+
 AFCARS<-read_csv("./data/afcars-deport00-16.csv", na="NULL")
 
+
 AFCARS<-AFCARS%>%
-  filter(!(is.na(FIPSCODE)), FIPSCODE!=9)
+  filter(!(is.na(FIPSCODE)), FIPSCODE!=9)%>%
+  filter(STATE!=72)
 
 AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==3, NA,
                         ifelse((AFCARS$HISORGIN==2)|(AFCARS$HISORGIN==0), "non-hispanic",
@@ -45,26 +57,35 @@ AFCARS<-AFCARS%>%
   select(FY, STATE, FIPSCODE,
          HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
 gc()
+
+AFCARS<-left_join(AFCARS, pop)
+AFCARS<-AFCARS%>%
+  filter(!is.na(child_hispanic))
+
+AFCARS$STATE<-factor(AFCARS$STATE)
+AFCARS$HISORGIN<-factor(AFCARS$HISORGIN)
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
 # AFCARS.imp<-amelia(AFCARS, m = 3,
 #                    p2s = 1, idvars = c("STATE", "FIPSCODE"),
 #                    noms = c("HISORGIN"))
 
-samp<-sample(1:nrow(AFCARS), 1000, replace=F)
+samp<-sample(1:nrow(AFCARS), 10000, replace=F)
 AFCARS.test<-AFCARS[samp,]
 
 ind.clust<-2
 ini<-mice(AFCARS.test, m=1, maxit = 0)
 pred<-ini$pred
-pred["HISORGIN", ]<-c(2, -2, 2, 0, 2, 2, 2, 2)
-pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
-pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
-pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
-method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
+# pred["HISORGIN", ]<-c(1, -2, 0, 0, 1, 1, 1, 1, 1, 1)
+# pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
+# pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
+# pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
+# method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
 #rm(ini)
 gc()
-imp_test<-mice(AFCARS.test, pred=pred, method = method, print=TRUE)
+imp_test<-mice(AFCARS, pred=pred, 
+               #method = method, 
+               print=TRUE)
 gc()
 save.image("mice-test.Rdata")
 
