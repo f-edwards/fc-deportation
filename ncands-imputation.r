@@ -2,45 +2,32 @@
 rm(list=ls())
 gc()
 
-library(mice)
-library(pan)
+setwd("R:/Project/NCANDS/fc-deportation")
+.libPaths("./library")
+
 library(tidyverse)
+library(mice)
 
 set.seed(1)
 
-ncands<-read_csv("./data/ncands-comm-reports-individual.csv", na="NULL")
+ncands<-read_csv("./data/ncands-rptsrc-individual.csv", na="NA")
+
+ncands$ethnicity[which(ncands$ethnicity=="unable")]<-NA
+gc()
 
 pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
 pop<-pop%>%
-  select(-adult_pop, -state)%>%
+  select(-adult_pop)%>%
   spread(HISORGIN, child_pop)%>%
-  rename(child_hispanic=hispanic, child_nonhispanic=`non-hispanic`)
-
-ncands$cethn<-factor(ncands$cethn, levels=c(1, 2, 3, 9),
-                     labels = c("hispanic", 
-                                "non-hispanic",
-                                "unable",
-                                "missing"))
-
-ncands$cethn[which((ncands$cethn=="unable")|(ncands$cethn=="missing"))]<-NA
-gc()
-ncands$cethn<-factor(as.character(ncands$cethn))
-gc()
-
-ncands$comm_report[which(ncands$miss_report==1)]<-NA
-ncands<-ncands%>%
-  select(-miss_report)
-gc()
-
-ncands$comm_report<-ncands$comm_report==1
+  rename(child_hispanic=hispanic, child_nonhispanic=`non-hispanic`)%>%
+  mutate(child_hispanic = log(child_hispanic),
+         child_nonhispanic = log(child_nonhispanic))
 
 ncands<-ncands%>%
   rename(year = subyr,
          FIPS = RptFIPS,
-         HISORGIN = cethn)%>%
+         HISORGIN = ethnicity)%>%
   mutate(FIPS=as.numeric(FIPS))
-
-ncands_test<-ncands%>%filter(year ==2014)
 
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
@@ -53,26 +40,88 @@ ncands_test<-ncands%>%filter(year ==2014)
 # samp<-samp%>%
 #   mutate(FIPS=as.numeric(FIPS))
 
-merge<-left_join(ncands_test, pop)%>%
-  filter(!(is.na(child_hispanic)))
+merge<-left_join(ncands, pop)
+merge<-merge%>%
+  mutate(report_source = factor(report_source),
+         HISORGIN = factor(HISORGIN))
 
-merge$FIPS<-factor(merge$FIPS)
-ini<-mice(merge, m=1, maxit = 0)
+states<-unique(merge$state)
+years<-unique(merge$year)
+gc()
+
+#### make imputations and output
+
+dat_temp<-merge%>%filter(state == states[1] 
+                         #year == years [j]
+)
+ini<-mice(dat_temp, m=1, maxit = 0)
 pred<-ini$pred
-#pred["cethn",]<-c(1, -2, 0, 1)
-#meth<-c("", "", "2l.norm", "")
+pred[, "FIPS"]<-0
+imp_out<-mice(dat_temp, predictorMatrix = pred)
+name<-paste("ncands_imp", index, ".csv", sep="")
+dat_temp<-mice::complete(imp_out, "long", include=TRUE)
+cnty<-dat_temp%>%
+  group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
+  summarise(count=n())%>%
+  spread(report_source, count, fill=0, sep="_")%>%
+  ungroup()
+
+cnty<-cnty%>%
+  dplyr::select(-report_source_NA)
 
 gc()
-imp_test<-mice(merge, 
-               pred=pred, 
-               #method = meth, 
-               print=TRUE, 
-               m=1,
-               maxit=1)
-gc()
 
-save.image("mice-test.Rdata")
-q(save="no")
+for(i in 2:length(states)){
+  #for(j in 1:length(years)){
+    print(states[[i]])
+    #print(years[[j]])
+    dat_temp<-merge%>%filter(state == states[i] 
+                             #year == years [j]
+                             )
+    ini<-mice(dat_temp, m=1, maxit = 0)
+    pred<-ini$pred
+    pred[, "FIPS"]<-0
+    imp_out<-mice(dat_temp, predictorMatrix = pred)
+    dat_temp<-mice::complete(imp_out, "long", include=TRUE)
+    cnty<-dat_temp%>%
+      group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
+      summarise(count=n())%>%
+      spread(report_source, count, fill=0, sep="_")%>%
+      ungroup()
+    
+    cnty<-cnty%>%
+      dplyr::select(-report_source_NA)
+
+    gc()   
+  #}
+}
+
+write_csv(cnty, "./ncands_cnty_imp.csv")
+
+
+save.image("mice-ncands.Rdata")
 # AFCARS<-AFCARS.imp$imputations[[1]]
 # rm(AFCARS.imp)
 gc()
+# 
+# ### complete imputation data
+# imp_dat_out<-mice::complete(imp_out[[1]], "long")
+# 
+# for(j in 1:length(imp_out)){
+#   imp_dat_out<-rbind(imp_dat_out,
+#                      mice::complete(imp_out[[j]], "long"))
+# }
+# 
+# imp_dat_out<-imp_dat_out%>%
+#   arrange(.imp)
+# 
+# 
+# # write data
+# out<-rbind(ncands%>%
+#              mutate(.imp = "0"),
+#            imp_dat_out%>%
+#              select(-.id))
+# 
+# write_csv(out, "ncands_imputed_state_fe.csv")
+
+q(save="no")
