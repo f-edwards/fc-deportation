@@ -135,7 +135,7 @@ gc()
 
 cnty<-list()
 
-for(i in 8:length(states)){
+for(i in 1:length(states)){
   #for(j in 1:length(years)){
     print(states[[i]])
     #print(years[[j]])
@@ -159,6 +159,10 @@ for(i in 8:length(states)){
     if("report_source_NA"%in%names(cnty)){      
     cnty[[i]]<-cnty[[i]]%>%
       dplyr::select(-report_source_NA)}
+    
+    ### for rewriting with no sci notation in the csv
+    cnty[[i]]<-cnty[[i]]%>%
+      mutate_if(cnty[[i]], is.numeric, as.integer)
     
     write_csv(cnty[[i]], paste("./data/ncands_cnty_imp", i, ".csv", sep=""))
     
