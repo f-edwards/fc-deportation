@@ -1,10 +1,20 @@
 rm(list=ls())
 gc()
 library(tidyverse)
-library(readr)
 library(haven)
-library(Amelia)
 library(maps)
+setwd("./data")
+
+
+data(state.fips)
+state.fips<-state.fips%>%
+  rename(STATE=fips,
+         stname=abb)%>%
+  select(STATE, stname)
+state.fips<-rbind(state.fips,
+                  c(2, "AK"), c(15, "HI"))%>%
+  distinct()
+state.fips$STATE<-as.integer(state.fips$STATE)
 
 ########################################################################
 ###### READ AFCARS IMPUTATION DATA - NEED TO ADD CASELOADS FOR REUN_EXIT DENOMINATOR
@@ -13,115 +23,47 @@ library(maps)
 ################# CREATE FIRST ENTRIES, NON-ABUSE REMREASON
 #### BRING IN IMPUTED DATA
 ### set imputation n variable
-n_imp<-3
-### set up data as list
-AFCARS<-read_csv(paste("./data/afcars-imp", 1, ".csv", sep=""))
-AFCARS<-AFCARS%>%
-  mutate(data=paste("imp1"))
-for(i in 2:n_imp){
-  temp<-read_csv(paste("./data/afcars-imp", i, ".csv", sep=""))
-  temp<-temp%>%
-    mutate(data=paste("imp", i, sep=""))
-  AFCARS<-bind_rows(AFCARS, temp)
-  rm(temp); gc()
-}
-AFCARS<-AFCARS%>%
-  select(-X1)
-
-### Drop Puerto Rico
-AFCARS<-AFCARS%>%
-  filter(STATE!=72)
+AFCARS<-read_csv("afcars_imputed_state_fe.csv")
 
 ##################################################################
 ###### FORMAT IMPUTATED AFCARS DATA FOR EDA
 ##################################################################
 
-##### FOR DEVELOPMENT#
-AFCARS<-AFCARS%>%
-  filter(data=="imp1")
 ######################
-
+# 
+# 
 
 cnty_entries<-AFCARS%>%
-  group_by(STATE, FIPSCODE, FY, HISORGIN, data)%>%
-  summarise(entries = as.integer(sum(first_entry * (abuse==0))),
-            not_abuse = as.integer(sum(abuse==0)),
-            reun_exit = as.integer(sum(reun_exit)),
-            caseload = n())%>%
-  ungroup()%>%
-  rename(FIPS=FIPSCODE)
-
-##### FOR FILLING IN ZERO HISPANIC ENTRY COUNTIES
-##### FIRST ID ALL COUNTIES WITH ANY NON-HISPANIC ENTRIES
-##### THEN SET NEW DATA WITH ZERO FOR ALL CATS FOR HISPANIC KIDS
-##### BECAUSE THESE DATA ARE IMPUTED, NO TRULY MISSING CASES HERE
-
-non_hisp<-cnty_entries%>%
-  filter(HISORGIN == "non-hispanic")%>%
-  select(FY, STATE, FIPS, data)%>%
-  distinct()
-
-hisp<-cnty_entries%>%
-  filter(HISORGIN == "hispanic")%>%
-  select(FY, STATE, FIPS, data)%>%
-  distinct()
-
-zeroes<-anti_join(non_hisp, hisp)
-
-zeroes<-zeroes%>%
-  mutate(entries = 0, not_abuse = 0, reun_exit = 0, caseload = 0,
-         HISORGIN = "hispanic")
-
-cnty_entries<-cnty_entries%>%
-  bind_rows(zeroes)%>%
-  arrange(data, HISORGIN, FIPS, FY)
-
-
-natl_entries<-AFCARS%>%
-  group_by(FY, HISORGIN, data)%>%
-  summarise(entries = sum(first_entry * (abuse==0)),
-            not_abuse = sum(abuse==0),
-            reun_exit = sum(reun_exit),
-            caseload = n())%>%
+  group_by(.imp, STATE, FIPSCODE, FY, HISORGIN)%>%
+  summarise(entries_first = as.integer(sum(first_entry, na.rm=TRUE)),
+            entries_first_nonab = as.integer(sum(first_entry * (abuse==0),na.rm=TRUE)),
+            cl = n(),
+            cl_not_abuse = as.integer(sum(abuse==0, na.rm=TRUE)),
+            reun_exit = as.integer(sum(reun_exit, na.rm=TRUE)))%>%
   ungroup()
 
-state_entries<-AFCARS%>%
-  group_by(STATE, FY, HISORGIN, data)%>%
-  summarise(entries = sum(first_entry * (abuse==0)),
-            not_abuse = sum(abuse==0),
-            reun_exit = sum(reun_exit),
-            caseload = n())%>%
-  ungroup()
 
-### get abbreviations for plotting
-data(state.fips)
-state.fips<-state.fips%>%
-  rename(STATE=fips,
-         stname=abb)%>%
-  select(STATE, stname)
-state.fips<-rbind(state.fips, 
-                  c(2, "AK"), c(15, "HI"))%>%
-  distinct()
-state.fips$STATE<-as.integer(state.fips$STATE)
+write_csv(cnty_entries, "afcars_imputed_county_sums.csv")
 
-cnty_entries<-cnty_entries%>% 
-  left_join(state.fips)
-state_entries<-state_entries%>%
-  left_join(state.fips)
-
-cnty_entries<-cnty_entries%>%
-  rename(year = FY)
-
-state_entries<-state_entries%>%
-  rename(year = FY)
-
-natl_entries<-natl_entries%>%
-  rename(year = FY)
+ 
+# cnty_entries<-cnty_entries%>% 
+#   left_join(state.fips)
+# state_entries<-state_entries%>%
+#   left_join(state.fips)
+# 
+# cnty_entries<-cnty_entries%>%
+#   rename(year = FY)
+# 
+# state_entries<-state_entries%>%
+#   rename(year = FY)
+# 
+# natl_entries<-natl_entries%>%
+#   rename(year = FY)
 
 ########################################################################
 ###### READ/TRANSFORM S-COMM DATA
 ########################################################################
-scomm<-read_csv("./data/countySComm.csv")
+scomm<-read_csv("./countySComm.csv")
 scomm<-scomm%>%
   rename(stname=State,
          countyname=Area_Name)%>%
@@ -153,7 +95,7 @@ scomm_full<-scomm_full%>%
 ###### READ/TRANSFORM 287(G) DATA
 ##############################################################################
 
-cnty287g<-read_dta("./data/county287g.dta")
+cnty287g<-read_dta("./county287g.dta")
 cnty287g<-cnty287g%>%
   rename(FIPS=countyid)%>%
   mutate(FIPS=as.numeric(FIPS))%>%
@@ -178,7 +120,7 @@ cnty287g_full<-left_join(full_set,
 ###### READ/TRANSFORM SEER CHILD POPULATION DATA
 ##############################################################################
 ### use AFCARS for state fips crosswalk w/county fips
-pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
+pop<-read_csv("./seer-child-pop-2000-2016.csv")
 pop<-pop%>%
   rename(stname=state)%>%
   left_join(state.fips)%>%
@@ -187,69 +129,53 @@ pop<-pop%>%
 ##############################################################################
 ###### READ/TRANSFORM NCANDS MALTREATMENT REPORTING DATA
 ##############################################################################
+files<-list.files()
+files_ncands<-files[grep("ncands_cnty", files)]
 
-ncands<-read_csv("./data/ncands-comm-reports.csv", na="NULL")
-
-ncands<-ncands%>%
-  mutate(FIPS = as.integer(RptFIPS))%>%
-  mutate(HISORGIN = ifelse(cethn == 1, "hispanic", 
-                           ifelse(cethn == 2, "non-hispanic",
-                                  "missing")))%>%
-  mutate(HISORGIN = ifelse(is.na(HISORGIN), "missing", HISORGIN))%>%
-  select( -RptFIPS, -cethn)%>%
-  rename(year = subyr)%>%
-  group_by(FIPS, year, HISORGIN)%>% ### to merge missing categories
-  summarise(total_reports = sum(total_reports),
-            comm_report = sum(comm_report),
-            missing_rptsrc = sum(missing_report))
-
-ncands_complete<-expand.grid(year = unique(ncands$year), 
-                             FIPS = unique(ncands$FIPS), 
-                             HISORGIN = unique(ncands$HISORGIN))
-### join on full list to include zeroes, missings
-ncands_complete<-full_join(ncands_complete, ncands)
-### zeroes are those where HISORGIN = 2, total_reports is !=NA, but 1 ==NA
-
-ncands_hisp_na<-ncands_complete%>%
-  select(year, FIPS, HISORGIN, total_reports)%>%
-  filter(is.na(total_reports))%>%
-  filter(HISORGIN==1)
-  
-ncands_non_hisp_na<-ncands_complete%>%
-  select(year, FIPS, HISORGIN, total_reports)%>%
-  filter(is.na(total_reports))%>%
-  filter(HISORGIN==2)
-  
-##### then anti join, set report variables to zero - 
-### want ncands_hisp_na - ncands_non_hisp_na
-
-ncands_zeroes<-anti_join(ncands_hisp_na, ncands_non_hisp_na)%>%
-  mutate(zero=TRUE)%>%
-  select(-total_reports)
-
-ncands_out<-left_join(ncands_complete, ncands_zeroes)%>%
-  mutate(zero = ifelse(is.na(zero), FALSE, zero),
-         total_reports = ifelse(zero == TRUE, 0, total_reports),
-         comm_report = ifelse(zero==TRUE, 0, comm_report),
-         missing_rptsrc = ifelse(is.na(missing_rptsrc), 0, missing_rptsrc))%>%
-  select(-zero)
-
-### use this for state totals later
-ncands_out$STATE<-as.integer(with(ncands_out,
-                              ifelse(nchar(FIPS)==4, substr(FIPS, 1, 1),
-                                     ifelse(nchar(FIPS)==5, substr(FIPS, 1, 2), NA))))
-
-ncands_out<-ncands_out%>%
-  filter(STATE!=72)
-
-### check for 999s - there are many
-substrRight <- function(x, n){
-  substr(x, nchar(x)-n+1, nchar(x))
+ncands_dat<-read_csv(files_ncands[1])
+for(i in 1:length(files_ncands)){
+  ncands_temp<-read_csv(files_ncands[i],
+                        col_types = "nnnccddd")
+  if("report_source_NA"%in%names(ncands_temp)){
+    ncands_temp<-ncands_temp%>%
+      select(-report_source_NA)
+  }
+  ncands_dat<-rbind(ncands_dat, ncands_temp)
 }
 
-ncands_cnty<-ncands_out%>%
-  filter(substrRight(FIPS, 3)!="999")
+ncands_imp<-ncands_dat%>%filter(.imp!=0)
 
+ncands_dat<-ncands_dat%>%
+  rename(stname=state)%>%
+  left_join(pop)
+
+test<-ncands_dat%>%
+  left_join(scomm)
+
+# county_index<-pop%>%
+#   select(year, FIPS, stname)%>%
+#   distinct()%>%
+#   left_join(ncands_dat%>%
+#               filter(.imp==1)%>%
+#               select(year, stname)%>%
+#               mutate(reported=TRUE)%>%
+#               distinct())%>%
+#   filter(reported == TRUE)%>%
+#   select(-reported)
+# 
+# test<-ncands_dat%>%
+#   left_join(county_index%>%
+#   left_join(ncands_dat)
+
+
+# ncands_merge<-left_join(pop, 
+#                 ncands_dat)%>%
+#   left_join(ncands_dat%>%
+#               filter(.imp==1)%>%
+#               select(year, stname)%>%
+#               mutate(reported=TRUE)%>%
+#               distinct())%>%
+#   filter(reported == TRUE)
 
 # ##############################################################################
 # ###### CHECK ON MATCHES BY FIPS, RECODE
