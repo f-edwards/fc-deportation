@@ -133,6 +133,15 @@ out<-rbind(AFCARS%>%
               select(-.id))
 
 write_csv(out, "afcars_imputed_state_fe.csv")
+
+dat<-read_csv("./afcars_imputed_state_fe.csv")
+
+cnty<-dat_temp%>%
+  group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
+  summarise(count=n())%>%
+  spread(report_source, count, fill=0, sep="_")%>%
+  ungroup()
+
 # ### diagnostic visuals
 # 
 # diag<-rbind(AFCARS%>%
