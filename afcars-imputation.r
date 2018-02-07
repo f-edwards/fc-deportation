@@ -87,20 +87,14 @@ gc()
 imp_test<-mice(AFCARS, 
                pred=pred, 
                #method = method, 
-               m=1,
-               maxit=1,
+               #m=1,
+               #maxit=1,
                print=TRUE)
 gc()
 save.image("mice-test.Rdata")
 
-# AFCARS<-AFCARS.imp$imputations[[1]]
-# rm(AFCARS.imp)
-gc()
+imp_data_out<-complete(imp_test, "long", include=TRUE)
 
-save.image("AFCARS-no-abuse-imputation.Rdata")
-
-write.amelia(AFCARS.imp, separate = TRUE, file.stem = "afcars-imp",
-             extension = ".csv")
 
 # ### diagnostic visuals
 # 

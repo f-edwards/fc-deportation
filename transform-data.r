@@ -3,7 +3,6 @@ gc()
 library(tidyverse)
 library(readr)
 library(haven)
-library(Amelia)
 library(maps)
 
 ########################################################################
@@ -184,24 +183,59 @@ pop<-pop%>%
   left_join(state.fips)%>%
   filter(STATE!=72)
 
+# ##############################################################################
+# ###### CHECK ON MATCHES BY FIPS, RECODE
+# # ##############################################################################
+afcars_fipsyr<-unique(paste(AFCARS$FIPS, AFCARS$year))
+pop_fipsyr<-unique(paste(pop$FIPS, pop$year))
+
+z<-afcars_fipsyr[which(!(afcars_fipsyr%in%pop_fipsyr))]
+# # https://www.cdc.gov/nchs/nvss/bridged_race/county_geography-_changes2015.pdf
+# following suggestiuons on recoding here
+# https://seer.cancer.gov/seerstat/variables/countyattribs/ruralurban.html
+AFCARS<-AFCARS%>%
+  rename(FIPS=FIPSCODE,
+         year=FY)
+
+recode_FIPS<-function(x){
+  #### THESE ARE FIPS-YEARS IN AFCARS NOT MATCHED IN SEER POP
+  ### weld county CO: FIPS 8123, enters pop data in 2002, 08914 prior
+  x$FIPS<-ifelse((x$FIPS==8123)&(x$year<2002), 
+                 8914, x$FIPS)
+  ### Boulder county CO: FIPS 8013, enters pop data in 2002, 08912 prior
+  x$FIPS<-ifelse((x$FIPS==8013)&(x$year<2002), 
+                 8912, x$FIPS)
+  ### Adams county CO: FIPS 8001, enters pop data in 2002, 8911 prior
+  x$FIPS<-ifelse((x$FIPS==8001)&(x$year<2002), 
+                 8911, x$FIPS)
+  ### Jefferson county CO: FIPS 8059, enteres pop data in 2002, 8913 prior
+  x$FIPS<-ifelse((x$FIPS==8059)&(x$year<2002), 
+                 8913, x$FIPS)
+  ### Bedford city, bedford county, VA: FIPS 51515, 51019, mapped to 51917
+  x$FIPS<-ifelse((x$FIPS==51515)|(x$FIPS==51019), 
+                 51917, x$FIPS)
+  ### Clifton Forge, VA: FIPS 51560 not included in SEER, mapped to 51005
+  x$FIPS<-ifelse(x$FIPS==51560, 
+                 51005, x$FIPS)
+  ### Oglala Lakota County, SD: FIPS 46102, not remapped in SEER, mapped to 46113
+  x$FIPS<-ifelse(x$FIPS==46102, 
+                 46113, x$FIPS)
+  
+  ### Wrangell Petersburg Census Area, AK: FIPS 02280, mapped in SEER after 2013 to 2275
+  x$FIPS<-ifelse((x$FIPS==2280)&(x$year>2013), 
+                 2275, x$FIPS)
+  ### Prince of Wales Census Area, AK: FIPS 02201, mapped in SEER after 2013 to 2130
+  x$FIPS<-ifelse((x$FIPS==2201)&(x$year>2013), 
+                 2130, x$FIPS)
+  return(x)
+}
+
+AFCARS<-recode_FIPS(AFCARS)
+
 ##############################################################################
 ###### READ/TRANSFORM NCANDS MALTREATMENT REPORTING DATA
 ##############################################################################
 
-ncands<-read_csv("./data/ncands-comm-reports.csv", na="NULL")
-
-ncands<-ncands%>%
-  mutate(FIPS = as.integer(RptFIPS))%>%
-  mutate(HISORGIN = ifelse(cethn == 1, "hispanic", 
-                           ifelse(cethn == 2, "non-hispanic",
-                                  "missing")))%>%
-  mutate(HISORGIN = ifelse(is.na(HISORGIN), "missing", HISORGIN))%>%
-  select( -RptFIPS, -cethn)%>%
-  rename(year = subyr)%>%
-  group_by(FIPS, year, HISORGIN)%>% ### to merge missing categories
-  summarise(total_reports = sum(total_reports),
-            comm_report = sum(comm_report),
-            missing_rptsrc = sum(missing_report))
 
 ncands_complete<-expand.grid(year = unique(ncands$year), 
                              FIPS = unique(ncands$FIPS), 
@@ -251,32 +285,7 @@ ncands_cnty<-ncands_out%>%
   filter(substrRight(FIPS, 3)!="999")
 
 
-# ##############################################################################
-# ###### CHECK ON MATCHES BY FIPS, RECODE
-# ##############################################################################
-# ### failed matches: use pop as reference
-# z<-scomm[- which(scomm$FIPS%in%pop$FIPS), "FIPS"]
-# z1<-cnty_entries[- which(cnty_entries$FIPS%in%pop$FIPS), "FIPS"]%>%distinct()
-# z2<-ncands_complete[- which(ncands_complete$FIPS%in%pop$FIPS)]%>%distinct()
-# failed<-rbind(z, z1, z2)%>%
-#   distinct()
-# 
-# #### DROP FOR NOW, come back and fix these. mapping available at
-# #### DROPPED FIPS ARE 2158 (<-2270), 46102, 51019, NA, 51515, 51560
-# # https://www.cdc.gov/nchs/nvss/bridged_race/county_geography-_changes2015.pdf
-# 
-# recode_FIPS<-function(x){
-#   x$FIPS<-ifelse(x$FIPS == 2270,
-#                  2158,
-#                  ifelse(x$FIPS == 46113,
-#                         46102,
-#                         ifelse(x$FIPS == 2201,
-#                                2130,
-#                                ifelse(x$FIPS == 2280,
-#                                       2195,
-#                                       x$FIPS))))
-#   return(x)
-# }
+
 
 #cnty_entries<-recode_FIPS(cnty_entries)
 
