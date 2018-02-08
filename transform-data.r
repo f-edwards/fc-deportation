@@ -3,13 +3,14 @@ gc()
 library(tidyverse)
 library(haven)
 library(maps)
-setwd("./data")
+#setwd("./data")
 
 
 data(state.fips)
 state.fips<-state.fips%>%
   rename(STATE=fips,
          stname=abb)%>%
+  mutate(stname = as.character(stname))%>%
   select(STATE, stname)
 state.fips<-rbind(state.fips,
                   c(2, "AK"), c(15, "HI"))%>%
@@ -90,6 +91,10 @@ for(i in 2:length(files_ncands)){
   }
   ncands<-rbind(ncands, ncands_temp)
 }
+
+ncands<-ncands%>%
+  rename(stname=state)%>%
+  left_join(state.fips)
 ########################################################################
 ###### READ/TRANSFORM S-COMM DATA
 ########################################################################
@@ -111,7 +116,14 @@ scomm<-scomm%>%
 cnty287g<-read_dta("./county287g.dta")
 cnty287g<-cnty287g%>%
   rename(FIPS=countyid)%>%
-  mutate(FIPS=as.numeric(FIPS))%>%
+  mutate(FIPS=as.numeric(FIPS),
+         year=as.numeric(year),
+         c287active = as.logical(c287active),
+         c287deny = as.logical(c287deny),
+         c287deny_outcome = as.character(c287deny_outcome),
+         c287deny_yr = as.numeric(c287deny_yr),
+         c287start_yr = as.numeric(c287start_yr),
+         c287_identify = as.numeric(c287_identify))%>%
   mutate(c287_ever_applied = TRUE)%>%
   select(-countyname)
 ##############################################################################
@@ -132,7 +144,7 @@ pop<-pop%>%
 ##########################
 ## AFCARS
 ##########################
-afcars_fipsyr<-unique(paste(afcars$FIPS, afcars$year))
+# afcars_fipsyr<-unique(paste(afcars$FIPS, afcars$year))
 # pop_fipsyr<-unique(paste(pop$FIPS, pop$year))
 # z<-afcars_fipsyr[which(!(afcars_fipsyr%in%pop_fipsyr))]
 afcars<-afcars%>%
@@ -151,15 +163,38 @@ ncands<-recode_FIPS(ncands)
 ###########################
 ## SCOMM, 287g
 ###########################
-#z<-scomm[which(!(scomm$FIPS)%in%pop$FIPS), "FIPS"]
+# #z<-scomm[which(!(scomm$FIPS)%in%pop$FIPS), "FIPS"]
 scomm<-recode_FIPS(scomm%>%mutate(year=0))%>%select(-year)
-cnty287g_fipsyr<-unique(paste(cnty287g$FIPS, cnty287g$year))
-z<-cnty287g_fipsyr[which(!(cnty287g_fipsyr%in%pop_fipsyr))]
+# cnty287g_fipsyr<-unique(paste(cnty287g$FIPS, cnty287g$year))
+# z<-cnty287g_fipsyr[which(!(cnty287g_fipsyr%in%pop_fipsyr))]
 cnty287g<-recode_FIPS(cnty287g)
 
 ##########################################################
 ## JOIN on POP, rep for .imp, then create indicators for reporting state AFCARS/NCANDS
 ##########################################################
+#### generate reported indicators for afcars / ncands
+reported_a<-afcars%>%
+              select(STATE, year)%>%
+              mutate(reported_afcars=TRUE)%>%
+              distinct()
+
+reported_n<-ncands%>%
+  select(STATE, year)%>%
+  mutate(reported_ncands=TRUE)%>%
+  distinct()
+
+reported<-full_join(reported_a, reported_n)%>%
+  complete(STATE, year)%>%
+  mutate(reported_afcars=ifelse(is.na(reported_afcars),
+                                F,
+                                T),
+         reported_ncands=ifelse(is.na(reported_ncands),
+                                F,
+                                T))
+
+pop<-pop%>%
+  left_join(reported)
+##### repeat pop for each .imp, so I can right join on pop for counties with no cases
 pop<-pop%>%
   mutate(.imp=0)%>%
   bind_rows(pop%>%
@@ -172,38 +207,55 @@ pop<-pop%>%
               mutate(.imp=4))%>%
   bind_rows(pop%>%
               mutate(.imp=5))
-
+#full join on all counties 2000 - 2016
 dat_out<-pop%>%
   left_join(afcars)%>%
-  left_join(afcars%>%
-              select(STATE, year)%>%
-              mutate(afcars_reported = TRUE))%>%
-  mutate(afcars_reported = ifelse(is.na(afcars_reported),
-                                  FALSE,
-                                  afcars_reported))
+  left_join(ncands)
+# transform false NA's in imputed data
+dat_out<-dat_out%>%
+  mutate(entries_first = ifelse((.imp>0)&
+                  (reported_afcars==TRUE)&
+                  (is.na(entries_first)),
+                  0, entries_first),
+         entries_first_nonab = ifelse((.imp>0)&
+                                        (reported_afcars==TRUE)&
+                                        (is.na(entries_first_nonab)),
+                                      0, entries_first_nonab),
+         cl = ifelse((.imp>0)&
+                       (reported_afcars==TRUE)&
+                       (is.na(cl)),
+                     0, cl),
+         cl_not_abuse = ifelse((.imp>0)&
+                       (reported_afcars==TRUE)&
+                       (is.na(cl_not_abuse)),
+                     0, cl_not_abuse),
+         reun_exit = ifelse((.imp>0)&
+                        (reported_afcars==TRUE)&
+                        (is.na(reun_exit)),
+                      0, reun_exit),
+         report_source_community = ifelse((.imp>0)&
+                       (reported_ncands==TRUE)&
+                       (is.na(report_source_community)),
+                     0, report_source_community),
+         report_source_law_enf = ifelse((.imp>0)&
+                       (reported_ncands==TRUE)&
+                       (is.na(report_source_law_enf)),
+                     0, report_source_law_enf),
+         report_source_other = ifelse((.imp>0)&
+                       (reported_ncands==TRUE)&
+                       (is.na(report_source_other)),
+                     0, report_source_other))
               
+dat_out<-dat_out%>%
+  left_join(scomm)%>%
+  left_join(cnty287g%>%
+              select(-c287_ever_applied))%>%
+  left_join(cnty287g%>%
+              select(FIPS, c287_ever_applied)%>%
+              distinct())%>%
+  mutate(c287_ever_applied = ifelse(is.na(c287_ever_applied),
+                                          FALSE,
+                                          c287_ever_applied))%>%
+  select(.imp, year, STATE, stname, FIPS, HISORGIN, everything())
 
-
-# county_index<-pop%>%
-#   select(year, FIPS, stname)%>%
-#   distinct()%>%
-#   left_join(ncands_dat%>%
-#               filter(.imp==1)%>%
-#               select(year, stname)%>%
-#               mutate(reported=TRUE)%>%
-#               distinct())%>%
-#   filter(reported == TRUE)%>%
-#   select(-reported)
-# 
-# test<-ncands_dat%>%
-#   left_join(county_index%>%
-#   left_join(ncands_dat)
-# ncands_merge<-left_join(pop, 
-#                 ncands_dat)%>%
-#   left_join(ncands_dat%>%
-#               filter(.imp==1)%>%
-#               select(year, stname)%>%
-#               mutate(reported=TRUE)%>%
-#               distinct())%>%
-#   filter(reported == TRUE)
-
+write_csv(dat_out, "merged_data.csv")
