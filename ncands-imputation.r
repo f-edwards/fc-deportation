@@ -135,7 +135,7 @@ gc()
 
 cnty<-list()
 
-for(i in 1:length(states)){
+for(i in 28:length(states)){
   #for(j in 1:length(years)){
     print(states[[i]])
     #print(years[[j]])
