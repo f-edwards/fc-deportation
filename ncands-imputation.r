@@ -51,8 +51,6 @@ recode_FIPS<-function(x){
   return(x)
 }
 
-ncands<-recode_FIPS(ncands)
-
 ncands$ethnicity[which(ncands$ethnicity=="unable")]<-NA
 gc()
 
@@ -69,6 +67,8 @@ ncands<-ncands%>%
          FIPS = RptFIPS,
          HISORGIN = ethnicity)%>%
   mutate(FIPS=as.numeric(FIPS))
+
+ncands<-recode_FIPS(ncands)
 
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
@@ -135,7 +135,7 @@ gc()
 
 cnty<-list()
 
-for(i in 28:length(states)){
+for(i in 1:length(states)){
   #for(j in 1:length(years)){
     print(states[[i]])
     #print(years[[j]])
@@ -161,10 +161,10 @@ for(i in 28:length(states)){
       dplyr::select(-report_source_NA)}
     
     ### for rewriting with no sci notation in the csv
-    cnty[[i]]<-cnty[[i]]%>%
-      mutate_if(cnty[[i]], is.numeric, as.integer)
+    # cnty[[i]]<-cnty[[i]]%>%
+    #   mutate_if(cnty[[i]], is.numeric, as.integer)
     
-    write_csv(cnty[[i]], paste("./data/ncands_cnty_imp", i, ".csv", sep=""))
+    write.csv(cnty[[i]], paste("./data/ncands_cnty_imp", i, ".csv", sep=""))
     
     gc()   
   #}
@@ -172,7 +172,7 @@ for(i in 28:length(states)){
 
 
 
-save.image("mice-ncands.Rdata")
+#save.image("mice-ncands.Rdata")
 # AFCARS<-AFCARS.imp$imputations[[1]]
 # rm(AFCARS.imp)
 gc()

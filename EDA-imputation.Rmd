@@ -6,16 +6,50 @@ output: pdf_document
 ---
 ```{r head, echo=FALSE, message=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
-# source("read.r") #### to read in data files if starting from scratch
-library(data.table)
 library(tidyverse)
-library(haven)
 library(maps)
+dat<-read_csv("./data/merged_data.csv")
+dat<-dat%>%filter(.imp==0)
+#dat$.imp<-factor(dat$levels = c(5, 4, 3, 2, 1, 0))
+
+nat_dat<-dat%>%
+  ungroup()%>%
+  filter(reported_afcars==TRUE)%>%
+  select(year, HISORGIN, child_pop, adult_pop, 
+         entries_first, entries_first_nonab,
+         cl, cl_not_abuse, reun_exit,
+         report_source_community, report_source_law_enf,
+         report_source_other)%>%
+  group_by(year, HISORGIN)%>%
+  mutate_at(vars(child_pop:report_source_other), as.integer, na.rm=TRUE)%>%
+  summarise_at(vars(child_pop:report_source_other), sum, na.rm=TRUE)
+#### summ all afcars/pop/ncands  
+state_dat<-dat%>%
+  ungroup()%>%
+  select(year, stname, HISORGIN, child_pop, adult_pop, 
+         entries_first, entries_first_nonab,
+         cl, cl_not_abuse, reun_exit,
+         report_source_community, report_source_law_enf,
+         report_source_other)%>%
+  group_by(year, HISORGIN, stname)%>%
+  mutate_at(vars(child_pop:report_source_other), as.integer)%>%
+  summarise_at(vars(child_pop:report_source_other), sum, na.rm=TRUE)
+### join with pct of counties in scomm, 287g
+state_dat<-state_dat%>%
+  left_join(dat%>%
+              select(year, stname, FIPS, c287active, scomm_yr_round)%>%
+              group_by(FIPS, year)%>%
+              distinct()%>%
+              mutate(scomm_active = scomm_yr_round<=year)%>%
+              group_by(stname, year)%>%
+              summarise(c287active_counties = sum(as.logical(c287active), na.rm=TRUE)/n(),
+                        scomm_active_counties = sum(scomm_active, na.rm=TRUE)/n()))
+
+cnty_dat<-dat%>%
+  filter(!(is.na(child_pop)))
+  
 ```
 
-```{r setup, cache = TRUE}
-source("transform-data.r")
-```
 
 # WITH IMPUTED DATA (m=1)
 
@@ -56,37 +90,107 @@ For those cases with missing data on removal reason, I construct an imputation m
 
 There's a clear downward trend in entry rates for Latino kids from '05 to '15 that looks similar to the rate for other kids. In the state plot (note the sqrt scale on the y axis for the state plots to make them more interpretable), there's not a clear temporal trend across states, though some jumping around in select states. Note that there looks like a slight downward trend in those states with high Latino entry rates.
 
-```{r placement_rates}
-## line plot on entries pc by year by ever applied, by denied, by active
-### CRAP - ALL MY NUMBERS WERE WRONG, NEED TO left_join on pop dynamically, can't sum in long form
+```{r natl descriptives}
 
-natl_entries_pop<-natl_entries%>%
-         left_join(pop%>%
-                     group_by(year, HISORGIN)%>%
-                   summarise(child_pop = sum(child_pop)))%>%
-         mutate(entry_rate=(entries/child_pop) * 1000)
-
-ggplot(natl_entries_pop,
-       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
+### descriptive to figure out CA - imputation 4 is off...
+# 
+# ggplot(cnty_dat%>%
+#          filter(HISORGIN=="hispanic",
+#                 stname=="CA",
+#                 .imp==5),
+#        aes(x=year, y=sqrt(cl/child_pop*1000)))+
+#   geom_line()+
+#   facet_wrap(~FIPS)
+############ caseloads
+ggplot(nat_dat,
+       aes(x=year, y=cl/child_pop*1000))+
   geom_line()+
-  xlab("Year")+
-  ylab("Foster care entries per 1,000 children")
+  facet_wrap(~HISORGIN)
 
-st_entries<-dat%>%
-         group_by(stname, year, HISORGIN)%>%
-         summarise(entries=sum(entries))%>%
-         left_join(pop%>%
-                     group_by(stname, year, HISORGIN)%>%
-                   summarise(child_pop = sum(child_pop)))%>%
-         mutate(entry_rate=(entries/child_pop) * 1000)
-
-ggplot(st_entries, 
-            aes(x=(year-2000), y=entry_rate, col=HISORGIN))+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(cl/child_pop*1000)))+
   geom_line()+
-  scale_y_sqrt()+
-  xlab("Year")+
-  ylab("Foster care entries per 1,000 children")+
+  ggtitle("latino caseloads")+
   facet_wrap(~stname)
+#########first entries
+ggplot(nat_dat,
+       aes(x=year, y=entries_first/child_pop*1000))+
+  geom_line()+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(entries_first/child_pop*1000)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+###########non-abuse first entries
+ggplot(nat_dat,
+       aes(x=year, y=entries_first_nonab/child_pop*1000))+
+  geom_line()+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(entries_first_nonab/child_pop*1000)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+####################reun exits
+ggplot(nat_dat,
+       aes(x=year, y=reun_exit/cl))+
+  geom_line()+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(reun_exit/cl)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+#####################law enf reports
+ggplot(nat_dat,
+       aes(x=year, y=report_source_law_enf/child_pop*1000))+
+  geom_line()+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(report_source_law_enf/child_pop*1000)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+##################comm reports
+ggplot(nat_dat,
+       aes(x=year, y=report_source_community/child_pop*1000))+
+  geom_line()+
+  ylim(0.0001, 10)+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt(report_source_community/child_pop*1000)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+############# total reports
+ggplot(nat_dat,
+       aes(x=year, y=cl/child_pop*1000))+
+  geom_line()+
+  facet_wrap(~HISORGIN)
+
+ggplot(state_dat%>%
+         filter(HISORGIN=="hispanic"),
+       aes(x=year, y=sqrt((report_source_law_enf + 
+                             report_source_community +
+                             report_source_other )/child_pop*1000)))+
+  geom_line()+
+  ggtitle("latino caseloads")+
+  facet_wrap(~stname)
+
+
+
 ```
 
 For counts of entries, the story is a little different. There's been aabout a 20 percent uptick in entries between 2000 and 2015, though data quality is iffy in the 2000 - 2003 period. Starting in 2004, we're looking at a much more modest 4 percent increase over 04-15, with a max at 75,000 in '06, up 20 percent from '04. 

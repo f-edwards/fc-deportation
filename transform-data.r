@@ -3,7 +3,7 @@ gc()
 library(tidyverse)
 library(haven)
 library(maps)
-#setwd("./data")
+setwd("./data")
 
 
 data(state.fips)
@@ -50,6 +50,8 @@ recode_FIPS<-function(x){
   ### Wade Hampton Census Area, AK: FIPS 2158, not in SEER, remap to 2270
   x$FIPS<-ifelse((x$FIPS==2158), 
                  2270, x$FIPS)
+  
+  x$FIPS<-ifelse(x$FIPS==56047, 56029, x$FIPS)
   return(x)
 }
 
@@ -78,17 +80,35 @@ afcars<-read_csv("afcars_imputed_county_sums.csv")
 files<-list.files()
 files_ncands<-files[grep("ncands_cnty", files)]
 
+# for(i in 1:length(files_ncands)){
+#   filename<-files_ncands[i]
+#   names<-read_csv(filename, n_max = 1)
+#   if("report_source_NA"%in%names(names)){
+#     temp<-read_csv(filename,
+#                    col_types = "dddccdddd")
+#     temp<-temp%>%
+#       select(-report_source_NA)
+#   }else{
+#     temp<-read_csv(filename,
+#                    col_types = "dddccddd")
+#   }
+#   
+#   write.csv(temp, 
+#             file=paste("./fixed/",filename,sep=""), 
+#             row.names=FALSE)
+# }
+
 ncands<-read_csv(files_ncands[1])
-if("report_source_NA"%in%names(ncands)){
-  ncands<-ncands%>%
-    select(-report_source_NA)
-}
+# if("report_source_NA"%in%names(ncands)){
+#   ncands<-ncands%>%
+#     select(-report_source_NA)
+# }
 for(i in 2:length(files_ncands)){
   ncands_temp<-read_csv(files_ncands[i])
-  if("report_source_NA"%in%names(ncands_temp)){
-    ncands_temp<-ncands_temp%>%
-      select(-report_source_NA)
-  }
+  # if("report_source_NA"%in%names(ncands_temp)){
+  #   ncands_temp<-ncands_temp%>%
+  #     select(-report_source_NA)
+  # }
   ncands<-rbind(ncands, ncands_temp)
 }
 
@@ -191,6 +211,19 @@ reported<-full_join(reported_a, reported_n)%>%
          reported_ncands=ifelse(is.na(reported_ncands),
                                 F,
                                 T))
+# add in entries for the 999s in pop
+fails<-which(!(ncands$FIPS%in%pop$FIPS))
+adds<-ncands[fails,]
+
+### create dummy data frame for pop
+dummy<-adds%>%
+  filter(.imp==1)%>%
+  mutate(child_pop=NA,
+         adult_pop=NA)%>%
+  select(-report_source_community, - report_source_law_enf, - report_source_other,
+         -.imp)
+
+pop<-bind_rows(pop, dummy)
 
 pop<-pop%>%
   left_join(reported)
