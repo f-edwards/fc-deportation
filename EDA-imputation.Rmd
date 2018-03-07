@@ -4,10 +4,14 @@ author: "Frank and Matt"
 date: "January 11, 2018"
 output: pdf_document
 ---
-```{r head, echo=FALSE, message=FALSE, warning=FALSE}
+
+```{r packages, echo=FALSE, message=FALSE, warnings=FALSE}
 knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
 library(tidyverse)
 library(maps)
+```
+
+```{r setup_read, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
 dat<-read_csv("./data/merged_data.csv")
 dat<-dat%>%filter(.imp==0)
 #dat$.imp<-factor(dat$levels = c(5, 4, 3, 2, 1, 0))
@@ -46,8 +50,40 @@ state_dat<-state_dat%>%
                         scomm_active_counties = sum(scomm_active, na.rm=TRUE)/n()))
 
 cnty_dat<-dat%>%
-  filter(!(is.na(child_pop)))
-  
+  filter(!(is.na(child_pop)))%>%
+  mutate(c287active = ifelse(is.na(c287active), FALSE, c287active),
+         scomm_active = scomm_yr_round <= year)
+
+c287_nat<-cnty_dat%>%
+  group_by(year, HISORGIN, c287active)%>%
+  select(year, HISORGIN, child_pop, adult_pop, 
+         entries_first, entries_first_nonab,
+         cl, cl_not_abuse, reun_exit,
+         report_source_community, report_source_law_enf,
+         report_source_other)%>%
+  mutate_at(vars(child_pop:report_source_other), as.integer, na.rm=TRUE)%>%
+  summarise_at(vars(child_pop:report_source_other), sum, na.rm=TRUE)
+
+c287_nat_everapplied<-cnty_dat%>%
+  group_by(year, HISORGIN, c287_ever_applied)%>%
+  select(year, HISORGIN, child_pop, adult_pop, 
+         entries_first, entries_first_nonab,
+         cl, cl_not_abuse, reun_exit,
+         report_source_community, report_source_law_enf,
+         report_source_other)%>%
+  mutate_at(vars(child_pop:report_source_other), as.integer, na.rm=TRUE)%>%
+  summarise_at(vars(child_pop:report_source_other), sum, na.rm=TRUE)
+
+scomm_nat<-cnty_dat%>%
+  group_by(year, HISORGIN, scomm_active)%>%
+  filter(!(is.na(scomm_active)))%>% # those counties that were recoded prior to program?
+  select(year, HISORGIN, child_pop, adult_pop, 
+         entries_first, entries_first_nonab,
+         cl, cl_not_abuse, reun_exit,
+         report_source_community, report_source_law_enf,
+         report_source_other)%>%
+  mutate_at(vars(child_pop:report_source_other), as.integer, na.rm=TRUE)%>%
+  summarise_at(vars(child_pop:report_source_other), sum, na.rm=TRUE)
 ```
 
 
@@ -103,300 +139,266 @@ There's a clear downward trend in entry rates for Latino kids from '05 to '15 th
 #   facet_wrap(~FIPS)
 ############ caseloads
 ggplot(nat_dat,
-       aes(x=year, y=cl/child_pop*1000))+
+       aes(x=year, y=cl/child_pop*1000, col=HISORGIN))+
   geom_line()+
-  facet_wrap(~HISORGIN)
+  scale_y_sqrt()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(cl/child_pop*1000)))+
+ggplot(state_dat,
+       aes(x=year, y=cl/child_pop*1000, col=HISORGIN))+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 #########first entries
 ggplot(nat_dat,
-       aes(x=year, y=entries_first/child_pop*1000))+
+       aes(x=year, y=entries_first/child_pop*1000, col=HISORGIN))+
   geom_line()+
-  facet_wrap(~HISORGIN)
+  scale_y_sqrt()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(entries_first/child_pop*1000)))+
+ggplot(state_dat,
+       aes(x=year, y=entries_first/child_pop*1000), col=HISORGIN)+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 ###########non-abuse first entries
 ggplot(nat_dat,
-       aes(x=year, y=entries_first_nonab/child_pop*1000))+
-  geom_line()+
-  facet_wrap(~HISORGIN)
+       aes(x=year, y=entries_first_nonab/child_pop*1000, col=HISORGIN))+
+  geom_line()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(entries_first_nonab/child_pop*1000)))+
+ggplot(state_dat,
+       aes(x=year, y=(entries_first_nonab/child_pop*1000), col=HISORGIN))+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 ####################reun exits
 ggplot(nat_dat,
-       aes(x=year, y=reun_exit/cl))+
+       aes(x=year, y=reun_exit/cl, col=HISORGIN))+
   geom_line()+
-  facet_wrap(~HISORGIN)
+  scale_y_sqrt()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(reun_exit/cl)))+
+ggplot(state_dat,
+       aes(x=year, y=(reun_exit/cl), col=HISORGIN))+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 #####################law enf reports
 ggplot(nat_dat,
-       aes(x=year, y=report_source_law_enf/child_pop*1000))+
+       aes(x=year, y=report_source_law_enf/child_pop*1000, col=HISORGIN))+
   geom_line()+
-  facet_wrap(~HISORGIN)
+  scale_y_sqrt()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(report_source_law_enf/child_pop*1000)))+
+ggplot(state_dat,
+       aes(x=year, y=(report_source_law_enf/child_pop*1000), col=HISORGIN))+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 ##################comm reports
 ggplot(nat_dat,
-       aes(x=year, y=report_source_community/child_pop*1000))+
+       aes(x=year, y=report_source_community/child_pop*1000, col=HISORGIN))+
   geom_line()+
-  ylim(0.0001, 10)+
-  facet_wrap(~HISORGIN)
+  scale_y_sqrt()
 
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt(report_source_community/child_pop*1000)))+
+
+ggplot(state_dat,
+       aes(x=year, y=(report_source_community/child_pop*1000), col=HISORGIN))+
   geom_line()+
-  ggtitle("latino caseloads")+
+  scale_y_sqrt()+
   facet_wrap(~stname)
 ############# total reports
 ggplot(nat_dat,
-       aes(x=year, y=cl/child_pop*1000))+
-  geom_line()+
-  facet_wrap(~HISORGIN)
-
-ggplot(state_dat%>%
-         filter(HISORGIN=="hispanic"),
-       aes(x=year, y=sqrt((report_source_law_enf + 
+       aes(x=year, y=(report_source_law_enf + 
                              report_source_community +
-                             report_source_other )/child_pop*1000)))+
-  geom_line()+
-  ggtitle("latino caseloads")+
-  facet_wrap(~stname)
+                             report_source_other)/ child_pop*1000,
+       col=HISORGIN))+
+  scale_y_sqrt()+
+  geom_line()
 
-
-
-```
-
-For counts of entries, the story is a little different. There's been aabout a 20 percent uptick in entries between 2000 and 2015, though data quality is iffy in the 2000 - 2003 period. Starting in 2004, we're looking at a much more modest 4 percent increase over 04-15, with a max at 75,000 in '06, up 20 percent from '04. 
-
-```{r counts}
-ggplot(dat%>%
-         group_by(year)%>%
-         filter(HISORGIN=="hispanic")%>%
-         summarise(entries=sum(entries)),
-       aes(x=year-2000, y=entries))+
-  geom_line()+
-  xlab("Year")+
-  ylab("Latino Foster care placements")
-
-```
-
-Caseloads (all kids in the system, not just entries, includes long-term stayers) look pretty similar. For states, the trend looks largely flat or downward over the '00-'15 period.
-
-```{r caseload_rates}
-cl_nat<-dat%>%
-         group_by(year, HISORGIN)%>%
-         summarise(caseload=sum(caseload))%>%
-  left_join(pop%>%
-              group_by(year, HISORGIN)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(caseload_rate=1000 * (caseload/child_pop))
-
-ggplot(cl_nat,
-       aes(x=year-2000, y=caseload_rate, col=HISORGIN))+
-  geom_line()+
-  xlab("Year")+
-  ylab("Foster care caseloads per 1,000 children")
-
-cl_state<-dat%>%
-         group_by(year, HISORGIN, stname)%>%
-         summarise(caseload=sum(caseload))%>%
-  left_join(pop%>%
-              group_by(year, HISORGIN, stname)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(caseload_rate=1000 * (caseload/child_pop))
-
-ggplot(cl_state,
-       aes(x=year-2000, y=caseload_rate, col=HISORGIN))+
+ggplot(state_dat,
+       aes(x=year, y=(report_source_law_enf + 
+                             report_source_community +
+                             report_source_other )/child_pop*1000,
+       col=HISORGIN))+
   geom_line()+
   scale_y_sqrt()+
-  xlab("Year")+
-  ylab("Foster care caseloads per 1,000 children")+
-  facet_wrap(~stname)
-```
+   facet_wrap(~stname)
 
-### Entries due to parental incapacitation
 
-I've experimented with two specifications for the incapacitation indicator. One grouped removal reason codes for incarceration, abandonment, and relinquishment (my initial setup). The one presented here is more liberal, following Amuedo-Dorantes and Arenas-Arroyo, and includes the prior codes plus caretaker inability to cope and inadequate housing. If you want to poke around on these individual variables, I've got a data explorer with all of these measures individually up at https://fedwards.shinyapps.io/afcars-table/
-
-The trend that I'm seeing for incapacitation entries, the TRUE panel, for Latino kids over this time period is largely flat. I'm a little concerned here, because this should match Amuedo-Dorantes and Arenas-Arroyo's Figure 3 in the draft you shared with me. The descriptives they they present in Table 1 for the foster care numbers are in the code output, along with my numbers. The mean looks pretty darn close, but they've got at least one outlier in there (the max value) that I'm not sure about. That set of extreme cases could drive their trend, but I don't know where it could've come from. The only possibility is that I'm excluding Puerto Rico, maybe they aren't? Regardless, the trend lines look pretty different in our numbers.
-
-```{r descriptives}
-st_incap<-dat%>%
-         group_by(HISORGIN, year, stname)%>%
-         filter(incap_index==TRUE)%>%
-         summarise(entries=sum(entries))%>%
-  left_join(pop%>%
-              group_by(HISORGIN, year, stname)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(entry_rate=1000*(entries/child_pop))%>%
-  ungroup()
-                     
-
-st_incap_subset<-st_incap%>%filter(HISORGIN=="hispanic")%>%
-  filter(year>2000)
-
-st_incap_subset%>%
-  summarise(mean=mean(entry_rate), sd=sd(entry_rate), min=min(entry_rate), max=max(entry_rate),
-            n=n())
-
-print("Amuedo-Dorantes and Arenas-Arroyo's descriptives")
-print("mean=1.212, SD=2.143, min=0, max=41.366, n=733")
 
 ```
 
-```{r incap_plots}
-incap_nat<-dat%>%
-         group_by(HISORGIN, incap_index, year)%>%
-         summarise(entries=sum(entries))%>%
-  left_join(pop%>%
-              group_by(HISORGIN, year)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(entry_rate=1000 * (entries / child_pop))
-
-
-ggplot(incap_nat,
-       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
-  geom_line()+
-  facet_wrap(~incap_index)+
-  ggtitle("Incapacitation entries (TRUE), non-missing (FALSE), missing (NA)")
-
-incap_st<-dat%>%
-  filter(incap_index==TRUE)%>%
-         group_by(HISORGIN,  year, stname)%>%
-         summarise(entries=sum(entries))%>%
-  left_join(pop%>%
-              group_by(HISORGIN, year, stname)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(entry_rate=1000 * (entries / child_pop))
-
-ggplot(incap_st,
-       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
-  geom_line()+
-  scale_y_sqrt()+
-  facet_wrap(~stname)+
-  ggtitle("Incapacitation entries")
-```
-
-### First entries, parental incapacitation
-
-Nothing too remarkable here, trends for rates going up for non-Latino kids after '10, down for Latino kids.
-
-```{r first_entry}
-first_nat<-dat%>%
-         group_by(HISORGIN, year)%>%
-         filter(incap_index==TRUE,
-                first_entry==TRUE)%>%
-         summarise(entries=sum(entries))%>%
-  left_join(pop%>%
-              group_by(HISORGIN, year)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(entry_rate=1000*entries/child_pop)
-
-ggplot(first_nat,
-       aes(x=year-2000, y=entry_rate, col=HISORGIN))+
-  geom_line()+
-  ylab("Entries per 1,000")+
-  ggtitle("First entry, due to parental incapacitation")
-  
-first_st<-dat%>%
-         group_by(HISORGIN, year, stname)%>%
-         filter(incap_index==TRUE,
-                first_entry==TRUE)%>%
-         summarise(entries=sum(entries))%>%
-  left_join(pop%>%
-              group_by(HISORGIN, year, stname)%>%
-              summarise(child_pop=sum(child_pop)))%>%
-  mutate(entry_rate=1000*entries/child_pop)
-
-ggplot(first_st,
-       aes(x=year-2000, y=sqrt(entry_rate*1000), col=HISORGIN))+
-  geom_line()+
-  facet_wrap(~stname)+
-  scale_y_log10()+
-  ylab("Entries per 1,000")+
-  ggtitle("First entry, due to parental incapacitation")
-
-
-```
 
 ### baseline 287g plots
 
 Active and inactive counties do appear very different in intercepts, but trends look similar. When restricted to incapacitation foster care entries, we see an uptick in entries for both Latino and other kids in 287(g) counties, and a clear downward trend in others. Open question about whether that's just an uptick in law enforcement activity in general in these places?
 
-```{r 287g_plots}
-entries_287<-cnty287g%>%
-  left_join(left_join(cnty287g, pop)%>%
-  group_by(FIPS, HISORGIN, year)%>%
-  summarise(child_pop=sum(child_pop)))%>%
-  left_join(dat%>%
-              group_by(FIPS, year, HISORGIN)%>%
-              summarise(entries=sum(entries)))%>%
-  mutate(entries=ifelse(is.na(entries), 0, entries))
 
-c287_nat<-entries_287%>%
-  group_by(c287active, year, HISORGIN)%>%
-  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
-            entries = sum(entries))
+# 287g ever applied
 
-entries_287_incap<-cnty287g%>%
-  left_join(left_join(cnty287g, pop)%>%
-  group_by(FIPS, HISORGIN, year)%>%
-  summarise(child_pop=sum(child_pop)))%>%
-  left_join(dat%>%
-              filter(incap_index==TRUE)%>%
-              group_by(FIPS, year, HISORGIN)%>%
-              summarise(entries=sum(entries)))%>%
-  mutate(entries=ifelse(is.na(entries), 0, entries))
+```{r 287g_applied}
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=cl / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
 
-c287_nat_incap<-entries_287_incap%>%
-  group_by(c287active, year, HISORGIN)%>%
-  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
-            entries = sum(entries))
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=entries_first_nonab / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
+
+
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=reun_exit / cl, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
+
+
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=report_source_community / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=report_source_law_enf / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(c287_nat_everapplied, 
+            aes(x=year, 
+                y=(report_source_community + report_source_law_enf + report_source_other) / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287_ever_applied))+
+  geom_line()+
+  xlab("Year")
+
+
+
+```
+
+# 287g active
+
+```{r 287g_active}
+ggplot(c287_nat, 
+            aes(x=year, 
+                y=cl / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287active))+
+  geom_line()+
+  xlab("Year")
 
 ggplot(c287_nat, 
-            aes(x=year, y=entry_rate, col=c287active, linetype=HISORGIN))+
+            aes(x=year, 
+                y=entries_first_nonab / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287active))+
   geom_line()+
-  xlab("Year")+
-  ylab("Latino foster care entries per 1,000 children")
+  xlab("Year")
 
-ggplot(c287_nat_incap, 
-            aes(x=year, y=entry_rate, col=c287active, linetype=HISORGIN))+
-  geom_line()+
-  xlab("Year")+
-  ylab("Latino foster care entries (parental incapacitation) per 1,000 children")
 
-ggplot(c287_nat_incap, 
-            aes(x=year, y=entries, col=c287active, linetype=HISORGIN))+
+ggplot(c287_nat, 
+            aes(x=year, 
+                y=reun_exit / cl, 
+                col=HISORGIN, 
+                linetype=c287active))+
   geom_line()+
-  xlab("Year")+
-  ylab("Latino foster care entries (parental incapacitation)")
+  xlab("Year")
+
+
+ggplot(c287_nat, 
+            aes(x=year, 
+                y=report_source_community / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287active))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(c287_nat, 
+            aes(x=year, 
+                y=report_source_law_enf / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287active))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(c287_nat, 
+            aes(x=year, 
+                y=(report_source_community + report_source_law_enf + report_source_other) / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=c287active))+
+  geom_line()+
+  xlab("Year")
+
+```
+
+
+# 287g active
+
+```{r scomm_active}
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=cl / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=entries_first_nonab / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=reun_exit / cl, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=report_source_community / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=report_source_law_enf / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+ggplot(scomm_nat, 
+            aes(x=year, 
+                y=(report_source_community + report_source_law_enf + report_source_other) / child_pop * 1000, 
+                col=HISORGIN, 
+                linetype=scomm_active))+
+  geom_line()+
+  xlab("Year")
+
+
+
 ```
 
 ### event plots
@@ -404,49 +406,56 @@ ggplot(c287_nat_incap,
 Here are some event plots, the boxplot is the distribution of all counties with an ever-active program pre and post implementation, then a national aggregation, then a by county time series plot. Still surprising that there isn't a clear trend, but Amuedo-Dorantes and Arenas-Arroyo found that Secure Communities was carrying the load in their models, may be the same case here. I'll move the analysis in that direction next.
 
 ```{r 287g_event}
-entries_287_event<-cnty287g%>%
-  left_join(left_join(cnty287g, pop)%>%
-  group_by(FIPS, HISORGIN, year)%>%
-  summarise(child_pop=sum(child_pop)))%>%
-  left_join(dat%>%
-              group_by(FIPS, year, HISORGIN)%>%
-              summarise(entries=sum(entries)))%>%
-  mutate(entries=ifelse(is.na(entries), 0, entries),
-         entry_rate=entries/child_pop * 1000)%>%
-  filter(c287deny==0)%>%
-  mutate(event_year=year - c287start_yr)%>%
-  filter(-4<event_year, event_year<4)%>%
-  filter(!(is.na(event_year)))
 
-# entries_quantiles<-entries_287_event%>%
-#   group_by(event_year, HISORGIN)%>%
-#   summarise(median=median(entry_rate),
-#             upper75=quantile(entry_rate, 0.75),
-#             lower25=quantile(entry_rate,0.25))
+event_287<-cnty_dat%>%
+  filter(!is.na(c287deny))%>%
+  mutate(c287event_year = year - as.numeric(c287start_yr))%>%
+  filter(!(is.na(c287event_year)))
 
-ggplot(entries_287_event,
-       aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
+
+event_scomm<-cnty_dat%>%
+         mutate(scomm_event_year = year - scomm_yr_round)%>%
+  filter(!(is.na(scomm_event_year)))
+
+ggplot(event_287,
+       aes(x=factor(c287event_year),
+           y=entries_first_nonab/child_pop*1000,
+           col=HISORGIN))+
   geom_boxplot()+
-  ggtitle("Ditribution of entry rates centered on 287g active")
+  scale_y_sqrt()
 
-c287_nat_event<-entries_287_event%>%
-  group_by(event_year, HISORGIN)%>%
-  summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
-            entries = sum(entries),
-            cases=n())
-
-ggplot(c287_nat_event, 
-            aes(x=event_year, y=entry_rate, col=HISORGIN))+
+ggplot(event_scomm%>%
+         group_by(scomm_event_year, HISORGIN)%>%
+         summarise(entries_first_nonab = mean(sum(entries_first_nonab / child_pop, na.rm=TRUE))), #### rewrite for a mean lineplot with upper/lower bounds
+       aes(x=scomm_event_year,
+           y=entries_first_nonab,
+           col=HISORGIN))+
   geom_line()+
-  geom_vline(xintercept = 0)+
-  xlab("Year, centered on 287g active")+
-  ylab("Latino foster care entries per 1,000 children")
+  scale_y_sqrt()
 
-ggplot(entries_287_event,
-       aes(x=event_year, y=entry_rate, col=HISORGIN))+
-    geom_vline(xintercept = 0)+
-  geom_line()+
-  facet_wrap(~countyname)
+# ggplot(entries_287_event,
+#        aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
+#   geom_boxplot()+
+#   ggtitle("Ditribution of entry rates centered on 287g active")
+# 
+# c287_nat_event<-entries_287_event%>%
+#   group_by(event_year, HISORGIN)%>%
+#   summarise(entry_rate = 1000 * (sum(entries) / sum(child_pop)),
+#             entries = sum(entries),
+#             cases=n())
+# 
+# ggplot(c287_nat_event, 
+#             aes(x=event_year, y=entry_rate, col=HISORGIN))+
+#   geom_line()+
+#   geom_vline(xintercept = 0)+
+#   xlab("Year, centered on 287g active")+
+#   ylab("Latino foster care entries per 1,000 children")
+# 
+# ggplot(entries_287_event,
+#        aes(x=event_year, y=entry_rate, col=HISORGIN))+
+#     geom_vline(xintercept = 0)+
+#   geom_line()+
+#   facet_wrap(~countyname)
 
 
 ```
@@ -454,45 +463,45 @@ ggplot(entries_287_event,
 ##Secure communities
 
 ```{r s_comm_setup}
-
-scomm_dat<-dat%>%
-  left_join(scomm%>%
-              select(-stname))%>%
-  mutate(scomm_event_time=year - Scomm_yr)%>%
-  select(-Scomm_mo, - Scomm_yr)
-
-cnty_scomm_event<-scomm%>%
-  left_join(left_join(scomm, pop)%>%
-  group_by(FIPS, HISORGIN, year)%>%
-  summarise(child_pop=sum(child_pop)))%>%
-  left_join(dat%>%
-              group_by(FIPS, year, HISORGIN)%>%
-              summarise(entries=sum(entries)))%>%
-  mutate(entries=ifelse(is.na(entries), 0, entries),
-         entry_rate=entries/child_pop * 1000)%>%
-  mutate(event_year=year - Scomm_yr)%>%
-  filter(child_pop>10)
-
-natl_scomm_event<-cnty_scomm_event%>%
-  group_by(event_year, HISORGIN)%>%
-  summarise(entry_rate = sum(entries)/sum(child_pop))%>%
-  filter(event_year>-5, event_year<5, !(is.na(event_year)))
-
-ggplot(natl_scomm_event,
-       aes(x=event_year, 
-           y=entry_rate,
-           col=HISORGIN))+
-  geom_line()+
-  geom_vline(xintercept=0)+
-  ggsave("s_comm_natl.png")
-
-ggplot(cnty_scomm_event%>%
-           filter(event_year>-5, event_year<5, !(is.na(event_year))),
-       aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
-  geom_boxplot()+
-  coord_cartesian(ylim=c(0, 10))+
-  ggtitle("Ditribution of entry rates centered on s-comm active")+
-  ggsave("s_comm_event_box.png")
+# 
+# scomm_dat<-dat%>%
+#   left_join(scomm%>%
+#               select(-stname))%>%
+#   mutate(scomm_event_time=year - Scomm_yr)%>%
+#   select(-Scomm_mo, - Scomm_yr)
+# 
+# cnty_scomm_event<-scomm%>%
+#   left_join(left_join(scomm, pop)%>%
+#   group_by(FIPS, HISORGIN, year)%>%
+#   summarise(child_pop=sum(child_pop)))%>%
+#   left_join(dat%>%
+#               group_by(FIPS, year, HISORGIN)%>%
+#               summarise(entries=sum(entries)))%>%
+#   mutate(entries=ifelse(is.na(entries), 0, entries),
+#          entry_rate=entries/child_pop * 1000)%>%
+#   mutate(event_year=year - Scomm_yr)%>%
+#   filter(child_pop>10)
+# 
+# natl_scomm_event<-cnty_scomm_event%>%
+#   group_by(event_year, HISORGIN)%>%
+#   summarise(entry_rate = sum(entries)/sum(child_pop))%>%
+#   filter(event_year>-5, event_year<5, !(is.na(event_year)))
+# 
+# ggplot(natl_scomm_event,
+#        aes(x=event_year, 
+#            y=entry_rate,
+#            col=HISORGIN))+
+#   geom_line()+
+#   geom_vline(xintercept=0)+
+#   ggsave("s_comm_natl.png")
+# 
+# ggplot(cnty_scomm_event%>%
+#            filter(event_year>-5, event_year<5, !(is.na(event_year))),
+#        aes(x=factor(event_year), y=entry_rate, col=HISORGIN))+
+#   geom_boxplot()+
+#   coord_cartesian(ylim=c(0, 10))+
+#   ggtitle("Ditribution of entry rates centered on s-comm active")+
+#   ggsave("s_comm_event_box.png")
 
 ```
 
