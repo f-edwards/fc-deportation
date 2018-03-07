@@ -3,9 +3,8 @@ gc()
 library(tidyverse)
 library(haven)
 library(maps)
+source("functions.r")
 setwd("./data")
-
-
 data(state.fips)
 state.fips<-state.fips%>%
   rename(STATE=fips,
@@ -17,43 +16,6 @@ state.fips<-rbind(state.fips,
   distinct()
 state.fips$STATE<-as.integer(state.fips$STATE)
 
-recode_FIPS<-function(x){
-  #### THESE ARE FIPS-YEARS IN AFCARS NOT MATCHED IN SEER POP
-  ### weld county CO: FIPS 8123, enters pop data in 2002, 08914 prior
-  x$FIPS<-ifelse((x$FIPS==8123)&(x$year<2002), 
-                 8914, x$FIPS)
-  ### Boulder county CO: FIPS 8013, enters pop data in 2002, 08912 prior
-  x$FIPS<-ifelse((x$FIPS==8013)&(x$year<2002), 
-                 8912, x$FIPS)
-  ### Adams county CO: FIPS 8001, enters pop data in 2002, 8911 prior
-  x$FIPS<-ifelse((x$FIPS==8001)&(x$year<2002), 
-                 8911, x$FIPS)
-  ### Jefferson county CO: FIPS 8059, enteres pop data in 2002, 8913 prior
-  x$FIPS<-ifelse((x$FIPS==8059)&(x$year<2002), 
-                 8913, x$FIPS)
-  ### Bedford city, bedford county, VA: FIPS 51515, 51019, mapped to 51917
-  x$FIPS<-ifelse((x$FIPS==51515)|(x$FIPS==51019), 
-                 51917, x$FIPS)
-  ### Clifton Forge, VA: FIPS 51560 not included in SEER, mapped to 51005
-  x$FIPS<-ifelse(x$FIPS==51560, 
-                 51005, x$FIPS)
-  ### Oglala Lakota County, SD: FIPS 46102, not remapped in SEER, mapped to 46113
-  x$FIPS<-ifelse(x$FIPS==46102, 
-                 46113, x$FIPS)
-  
-  ### Wrangell Petersburg Census Area, AK: FIPS 02280, mapped in SEER after 2013 to 2275
-  x$FIPS<-ifelse((x$FIPS==2280)&(x$year>2013), 
-                 2275, x$FIPS)
-  ### Prince of Wales Census Area, AK: FIPS 02201, mapped in SEER after 2013 to 2130
-  x$FIPS<-ifelse((x$FIPS==2201)&(x$year>2013), 
-                 2130, x$FIPS)
-  ### Wade Hampton Census Area, AK: FIPS 2158, not in SEER, remap to 2270
-  x$FIPS<-ifelse((x$FIPS==2158), 
-                 2270, x$FIPS)
-  
-  x$FIPS<-ifelse(x$FIPS==56047, 56029, x$FIPS)
-  return(x)
-}
 
 
 ########################################################################
