@@ -2,7 +2,7 @@
 rm(list=ls())
 gc()
 library(tidyverse)
-library(mice)
+library(mice, lib.loc="./library")
 library(haven)
 library(pan)
 source("functions.r")
@@ -91,29 +91,32 @@ AFCARS_merge<-left_join(AFCARS%>%
 
 #### ALL MATCH EXCEPT NYC COUNTIES, 36005, 36047, 36081, 36085: 
 #### merge all counts into 36061 (Manhattan) where FC cases are coded
-
-AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
-AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
-AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
-AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
+#####################################################################################################################
 ### multilevel imputation using mice
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
+#####################################################################################################################
+# 
+# AFCARS_merge$STATE<-as.integer(AFCARS_merge$STATE)
+# AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
+AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
+AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
 
-samp<-sample(1:nrow(AFCARS), 100000, replace=F)
+samp<-sample(1:nrow(AFCARS), 10000, replace=F)
 AFCARS.test<-AFCARS_merge[samp,]
 ini<-mice(AFCARS.test, m=1, maxit = 0)
+#### SET PREDICTOR MATRIX - -2 = ID random intercept, 1 = fixed effect, 2 = random effect
 pred<-ini$pred
-pred[,"FIPSCODE"]<- -2
+pred[which(pred[, "FIPSCODE"]==1),"FIPSCODE"]<- -2
+pred[which(pred[, "STATE"]==1),"STATE"]<- -2
 
+#### SET IMPUTATION METHODS
+meth<-ini$method
+meth[which(meth=="logreg")]<-"2l.bin"
 
-pred[, "STATE"]<-rep(0, nrow(pred))
-pred["HISORGIN", ]<-c(1, -2, 0, 0, 1, 1, 1, 1, 1, 1)
-pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
-pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
-pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
-method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
-rm(ini)
-AFCARS.5m<-AFCARS[sample(1:nrow(AFCARS), 5000000, replace=F),]
+#### RUN TEST DATA
+pred<-mice(AFCARS.test, 
+           method = meth, 
+           pred = ini$pred)
 
 
 

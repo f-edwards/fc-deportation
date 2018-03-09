@@ -2,7 +2,7 @@
 rm(list=ls())
 gc()
 library(tidyverse)
-library(mice)
+library(mice, lib.loc="./library")
 library(haven)
 library(pan)
 source("functions.r")
