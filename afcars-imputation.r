@@ -1,17 +1,14 @@
 #.rs.restartR()
 rm(list=ls())
 gc()
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(haven)
-library(readr)
+library(tidyverse)
 library(mice)
+library(haven)
 library(pan)
-
-setwd("Y:/NDACAN/NDACAN-RA/fre9/fc-deportation")
+source("functions.r")
 
 pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
+
 
 pop<-pop%>%
   select(-adult_pop, -state)%>%
@@ -20,8 +17,7 @@ pop<-pop%>%
          FIPSCODE=FIPS,
          FY=year)
 
-AFCARS<-read_csv("./data/afcars-deport00-16.csv", na="NULL")
-
+AFCARS<-read_csv("./data/afcars-deport00-16.csv", na=c("NULL", 99))
 
 AFCARS<-AFCARS%>%
   filter(!(is.na(FIPSCODE)), FIPSCODE!=9)%>%
@@ -31,18 +27,125 @@ AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==3, NA,
                         ifelse((AFCARS$HISORGIN==2)|(AFCARS$HISORGIN==0), "non-hispanic",
                                ifelse(AFCARS$HISORGIN==1, "hispanic",
                                       AFCARS$HISORGIN)))
+
+AFCARS$SEX<-ifelse(AFCARS$SEX == 1, "Male",
+                   ifelse(AFCARS$SEX == 2, "Female",
+                          NA))
+### coerce all rem reasons to logical
+index<-c(which(names(AFCARS)=="PHYABUSE"), which(names(AFCARS)=="HOUSING"))
+AFCARS[, index[1]:index[2]]<-lapply(AFCARS[, index[1]:index[2]], function(x) as.logical(x))
+### format all other variables
+AFCARS$Entered<-as.logical(AFCARS$Entered)
+AFCARS$Exited<-as.logical(AFCARS$Exited)
+AFCARS$DISREASN<-as.factor(AFCARS$DISREASN)
+
 gc()
 
+AFCARS<-recode_FIPS(AFCARS)
+
+###### BRING IN MATT'S COUNTY DATA
+pop_puma<-read_dta("./data/countykids00to16.dta")
+pop_puma$FIPSCODE<-as.numeric(pop_puma$countyid)
+############## selecting county-year level variables for imputation, going for many to improve prediction
+pop_imputation_data<-pop_puma%>%
+  select(FIPSCODE, year, cpop, cpnhw, cpnhb, cphisp, cpimmig, cpnoncit,
+         cppoor, cpvpoor, cpworking, cped_lths, cpgkid, cpkhsg_own,
+         cpmarfam, cphhsnap, chhsize, chhinc)
+#### FOR IMPUTATION CONSTRUCT INTERPOLATIONS FOR 2001 - 2004 on pop cats
+
+counties<-unique(pop_imputation_data$FIPSCODE)
+missings<-data.frame("FIPSCODE" = rep(counties, 6),
+                     "year"= c(rep(2001, length(counties)),
+                               rep(2002, length(counties)),
+                               rep(2003, length(counties)),
+                               rep(2004, length(counties)),
+                               rep(2005, length(counties)),
+                               rep(2006, length(counties))))
+
+for(i in counties){ ### linear interpolation for imputation models
+  print(i)
+  start<-pop_imputation_data[which((pop_imputation_data$FIPSCODE==i) & 
+                                     (pop_imputation_data$year==2000)), ]
+  end<-pop_imputation_data[which((pop_imputation_data$FIPSCODE==i) & 
+                                   (pop_imputation_data$year==2007)), ]
+  if(nrow(start)>0 & nrow(end)>0){
+    output<-bind_rows(start, start, start, start)
+    output$year<-2001:2004
+  for(j in 3:ncol(pop_imputation_data)){
+    slope<-(end[j] - start[j])/4
+    interps<-slope[[1]] * seq(1, 4, 1) + start[[j]]
+    output[j]<-interps
+  }
+    pop_imputation_data<-bind_rows(pop_imputation_data, output)
+  }
+}
+
+pop_imputation_data$FIPSCODE<-ifelse(pop_imputation_data$FIPSCODE==36999,
+                            36061, 
+                            pop_imputation_data$FIPSCODE)
+
+AFCARS_merge<-left_join(AFCARS%>%
+                          rename(year = FY), 
+                        pop_imputation_data)%>%
+  filter(!(is.na(cpop)))
+
+#### ALL MATCH EXCEPT NYC COUNTIES, 36005, 36047, 36081, 36085: 
+#### merge all counts into 36061 (Manhattan) where FC cases are coded
+
+AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
+AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
+AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
+AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
+### multilevel imputation using mice
+### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
+
+samp<-sample(1:nrow(AFCARS), 100000, replace=F)
+AFCARS.test<-AFCARS_merge[samp,]
+ini<-mice(AFCARS.test, m=1, maxit = 0)
+pred<-ini$pred
+pred[,"FIPSCODE"]<- -2
+
+
+pred[, "STATE"]<-rep(0, nrow(pred))
+pred["HISORGIN", ]<-c(1, -2, 0, 0, 1, 1, 1, 1, 1, 1)
+pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
+pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
+pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
+method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
+rm(ini)
+AFCARS.5m<-AFCARS[sample(1:nrow(AFCARS), 5000000, replace=F),]
+
+
+
+
+save.image("mice-test.Rdata")
+gc()
+q(save="no")
+
+
+
+######################################################POST IMPUTATION PROCESSING
 ### Filter out cases with any cat not relevant, should give upper bound on incap removals 
 ### abuse _index<- [PHYABUSE, SEXABUSE, AAPARENT, DAPARENT, AACHILD, DACHILD, CHILDIS, PRTSDIED]
 AFCARS$abuse<-with(AFCARS, (PHYABUSE==1) | 
-                          (SEXABUSE==1) | 
-                          (AAPARENT==1) | 
-                          (DAPARENT==1) | 
-                          (AACHILD==1) | 
-                          (DACHILD==1) | 
-                          (CHILDIS==1) | 
-                          (PRTSDIED==1))
+                     (SEXABUSE==1) | 
+                     (AAPARENT==1) | 
+                     (DAPARENT==1) | 
+                     (AACHILD==1) | 
+                     (DACHILD==1) | 
+                     (CHILDIS==1) | 
+                     (PRTSDIED==1))
+
+
+AFCARS$incar<-with(AFCARS,
+                   (PRTSJAIL==1))
+
+
+AFCARS$incap_broad<-with(AFCARS,
+                         (PRTSJAIL==1) |
+                           (NOCOPE==1) |
+                           (ABANDMNT==1) |
+                           (RELINQSH==1))
 
 AFCARS$first_entry<- (AFCARS$Entered==1) &
   (AFCARS$TotalRem==1) ### Entered is never missing, NA&FALSE = FALSE
@@ -54,127 +157,129 @@ AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1,
                                 FALSE))
 
 AFCARS<-AFCARS%>%
+  select(-PHYABUSE, -SEXABUSE, -AAPARENT, -DAPARENT, 
+         -AACHILD, -DACHILD, -CHILDIS, -PRTSDIED,
+         -NEGLECT, -CHBEHPRB)
+
+
+
+AFCARS<-AFCARS%>%
   select(FY, STATE, FIPSCODE,
          HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
 gc()
 
-AFCARS<-left_join(AFCARS, pop)
-AFCARS<-AFCARS%>%
-  filter(!is.na(child_hispanic))
 
-AFCARS$STATE<-factor(AFCARS$STATE)
-AFCARS$HISORGIN<-factor(AFCARS$HISORGIN)
-### multilevel imputation using mice
-### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
-# AFCARS.imp<-amelia(AFCARS, m = 3,
-#                    p2s = 1, idvars = c("STATE", "FIPSCODE"),
-#                    noms = c("HISORGIN"))
 
-samp<-sample(1:nrow(AFCARS), 10000, replace=F)
-AFCARS.test<-AFCARS[samp,]
+# write data
+out<-rbind(AFCARS%>%
+              mutate(.imp = "0"),
+            imp_dat_out%>%
+              select(-.id))
 
-ind.clust<-2
-ini<-mice(AFCARS.test, m=1, maxit = 0)
-pred<-ini$pred
-#pred[, "STATE"]<-rep(0, nrow(pred))
-# pred["HISORGIN", ]<-c(1, -2, 0, 0, 1, 1, 1, 1, 1, 1)
-# pred["abuse", ]<-c(2, -2, 2, 2, 2, 0, 2, 2)
-# pred["first_entry", ]<-c(2, -2, 2, 2, 2, 2, 0, 2)
-# pred["reun_exit", ]<-c(2, -2, 2, 2, 2, 2, 2, 0)
-# method<-c("", "", "", "2l.bin", "", "2l.bin",  "2l.bin",  "2l.bin")
-#rm(ini)
-#AFCARS.5m<-AFCARS[sample(1:nrow(AFCARS), 5000000, replace=F),]
-gc()
-imp_test<-mice(AFCARS, 
-               pred=pred, 
-               #method = method, 
-               #m=1,
-               #maxit=1,
-               print=TRUE)
-gc()
-save.image("mice-test.Rdata")
+write_csv(out, "afcars_imputed_state_fe.csv")
 
-<<<<<<< HEAD
-# AFCARS<-AFCARS.imp$imputations[[1]]
-# rm(AFCARS.imp)
-gc()
+dat<-read_csv("./afcars_imputed_state_fe.csv")
 
-# save.image("AFCARS-no-abuse-imputation.Rdata")
-# 
-# write.amelia(AFCARS.imp, separate = TRUE, file.stem = "afcars-imp",
-#              extension = ".csv")
-=======
-imp_data_out<-complete(imp_test, "long", include=TRUE)
-
->>>>>>> d99b9a80bf670a62b47dba211edce5dd27ab61b6
+cnty<-dat_temp%>%
+  group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
+  summarise(count=n())%>%
+  spread(report_source, count, fill=0, sep="_")%>%
+  ungroup()
 
 # ### diagnostic visuals
 # 
-# diag<-bind_rows(AFCARS%>%mutate(abuse = as.numeric(abuse),
-#                                 first_entry = as.numeric(first_entry),
-#                                 reun_exit = as.numeric(reun_exit),
-#                                 data="orig"),
-#                 AFCARS.imp$imputations[[1]]%>%mutate(data="imp1"),
-#                 AFCARS.imp$imputations[[2]]%>%mutate(data="imp2"),
-#                 AFCARS.imp$imputations[[3]]%>%mutate(data="imp3"))
+# diag<-rbind(AFCARS%>%
+#               mutate(.imp = "6"),
+#             imp_dat_out%>%
+#               select(-.id))
 # 
-# rm(AFCARS.imp)
-# rm(AFCARS)
-# gc()
 # 
 # natl<-diag%>%
-#   group_by(data, FY)%>%
+#   group_by(.imp, FY)%>%
 #   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
 #             sd_abuse = sd(abuse, na.rm=TRUE),
 #             mean_first_entry = mean(first_entry, na.rm=TRUE),
 #             sd_first_entry = sd(first_entry, na.rm=TRUE),
 #             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
-#             sd_reun_exit = sd(reun_exit, na.rm=TRUE))
+#             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
+#             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
+#             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
 # 
-# ggplot(natl, aes(y=mean_abuse, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
+# ggplot(natl, aes(y=mean_abuse, x=FY, col=.imp))+
+#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
 #     #     ymax = mean_abuse + 2*sd_abuse),
 #     alpha = 0.8)+
+#   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
+#   ylab("mean abuse, solid, sd abuse, dashed")
 #   ggsave("natl_abuse_imp.png")
-# 
-# ggplot(natl, aes(y=mean_first_entry, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
-#     #     ymax = mean_abuse + 2*sd_abuse),
-#     alpha = 0.8)+
-#   ggsave("natl_first_imp.png")
-# 
-# ggplot(natl, aes(y=mean_reun_exit, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
-#     #     ymax = mean_abuse + 2*sd_abuse),
-#     alpha = 0.8)+
-#   ggsave("natl_reun_imp.png")
+#   
+# ggplot(natl, aes(y=mean_first_entry, x=FY, col=.imp))+
+#     geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
+#       #     ymax = mean_first_entry + 2*sd_first_entry),
+#       alpha = 0.8)+
+#     geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
+#     ylab("mean first_entry, solid, sd first_entry, dashed")+
+#   ggsave("natl_first_entry_imp.png")
+#   
+# ggplot(natl, aes(y=mean_reun_exit, x=FY, col=.imp))+
+#     geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
+#       #     ymax = mean_reun_exit + 2*sd_reun_exit),
+#       alpha = 0.8)+
+#     geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
+#     ylab("mean reun_exit, solid, sd reun_exit, dashed")+
+#   ggsave("natl_reun_exit_imp.png")
+#   
+# ggplot(natl, aes(y=mean_hisorgin, x=FY, col=.imp))+
+#     geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
+#       #     ymax = mean_hisorgin + 2*sd_hisorgin),
+#       alpha = 0.8)+
+#     geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
+#     ylab("mean hisorgin, solid, sd hisorgin, dashed")+
+#   ggsave("natl_hisorgin_imp.png")
 # 
 # state<-diag%>%
-#   group_by(data, STATE, FY)%>%
+#   group_by(.imp, FY, STATE)%>%
 #   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
 #             sd_abuse = sd(abuse, na.rm=TRUE),
 #             mean_first_entry = mean(first_entry, na.rm=TRUE),
 #             sd_first_entry = sd(first_entry, na.rm=TRUE),
 #             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
-#             sd_reun_exit = sd(reun_exit, na.rm=TRUE))
+#             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
+#             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
+#             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
 # 
-# ggplot(state, aes(y=mean_abuse, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
-#              #     ymax = mean_abuse + 2*sd_abuse),
-#               alpha = 0.8)+
-#   facet_wrap(~STATE)+
-#   ggsave("state_abuse_imp.png")
-# 
-# ggplot(state, aes(y=mean_first_entry, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
+# ggplot(state, aes(y=mean_abuse, x=FY, col=.imp))+
+#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
 #     #     ymax = mean_abuse + 2*sd_abuse),
 #     alpha = 0.8)+
+#   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
+#   ylab("mean abuse, solid, sd abuse, dashed")+
 #   facet_wrap(~STATE)+
-#   ggsave("state_first_imp.png")
+# ggsave("state_abuse_imp.png")
 # 
-# ggplot(state, aes(y=mean_reun_exit, x=FY, col=data))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse, 
-#     #     ymax = mean_abuse + 2*sd_abuse),
+# ggplot(state, aes(y=mean_first_entry, x=FY, col=.imp))+
+#   geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
+#     #     ymax = mean_first_entry + 2*sd_first_entry),
 #     alpha = 0.8)+
+#   geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
+#   ylab("mean first_entry, solid, sd first_entry, dashed")+
 #   facet_wrap(~STATE)+
-#   ggsave("state_reun_imp.png")
+#   ggsave("state_first_entry_imp.png")
+# 
+# ggplot(state, aes(y=mean_reun_exit, x=FY, col=.imp))+
+#   geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
+#     #     ymax = mean_reun_exit + 2*sd_reun_exit),
+#     alpha = 0.8)+
+#   geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
+#   ylab("mean reun_exit, solid, sd reun_exit, dashed")+
+#   facet_wrap(~STATE)+
+#   ggsave("state_reun_exit_imp.png")
+# 
+# ggplot(state, aes(y=mean_hisorgin, x=FY, col=.imp))+
+#   geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
+#     #     ymax = mean_hisorgin + 2*sd_hisorgin),
+#     alpha = 0.8)+
+#   geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
+#   ylab("mean hisorgin, solid, sd hisorgin, dashed")+
+#   facet_wrap(~STATE)+
+#   ggsave("state_hisorgin_imp.png")
