@@ -7,16 +7,6 @@ library(haven, lib.loc="./library")
 library(pan, lib.loc="./library")
 source("functions.r")
 
-pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
-
-
-pop<-pop%>%
-  select(-adult_pop, -state)%>%
-  spread(HISORGIN, child_pop)%>%
-  rename(child_hispanic=hispanic, child_nonhispanic=`non-hispanic`,
-         FIPSCODE=FIPS,
-         FY=year)
-
 AFCARS<-read_csv("./data/afcars-deport00-16.csv", na=c("NULL", 99))
 
 AFCARS<-AFCARS%>%
@@ -31,6 +21,7 @@ AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==3, NA,
 AFCARS$SEX<-ifelse(AFCARS$SEX == 1, "Male",
                    ifelse(AFCARS$SEX == 2, "Female",
                           NA))
+
 AFCARS$abuse<-with(AFCARS, (PHYABUSE==1) | 
                      (SEXABUSE==1) | 
                      (AAPARENT==1) | 
@@ -54,14 +45,14 @@ AFCARS$incap_broad<-with(AFCARS,
 AFCARS$first_entry<- (AFCARS$Entered==1) &
   (AFCARS$TotalRem==1) ### Entered is never missing, NA&FALSE = FALSE
 
-AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1, 
+AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1 & AFCARS$Exited ==1, 
                          TRUE, 
-                         ifelse((AFCARS$DISREASN==99) & (AFCARS$Exited == 1), 
+                         ifelse(is.na(AFCARS$DISREASN) & (AFCARS$Exited == 1), 
                                 NA,
                                 FALSE))
 
 AFCARS<-AFCARS%>%
-  select(FY, STATE, FIPSCODE,
+  select(FY, STATE, FIPSCODE, SEX,
          HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
 gc()
 
@@ -82,12 +73,10 @@ missings<-data.frame("FIPSCODE" = rep(counties, 6),
                      "year"= c(rep(2001, length(counties)),
                                rep(2002, length(counties)),
                                rep(2003, length(counties)),
-                               rep(2004, length(counties)),
-                               rep(2005, length(counties)),
-                               rep(2006, length(counties))))
+                               rep(2004, length(counties))))
 
 for(i in counties){ ### linear interpolation for imputation models
-  print(i)
+  #print(i)
   start<-pop_imputation_data[which((pop_imputation_data$FIPSCODE==i) & 
                                      (pop_imputation_data$year==2000)), ]
   end<-pop_imputation_data[which((pop_imputation_data$FIPSCODE==i) & 
@@ -120,27 +109,29 @@ AFCARS_merge<-left_join(AFCARS%>%
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
 #####################################################################################################################
 # 
-# AFCARS_merge$STATE<-as.integer(AFCARS_merge$STATE)
-# AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
+AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
+AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
 AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
 AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
 
-samp<-sample(1:nrow(AFCARS), 10000, replace=F)
+samp<-sample(1:nrow(AFCARS_merge), 1000, replace=F)
 AFCARS.test<-AFCARS_merge[samp,]
 ini<-mice(AFCARS.test, m=1, maxit = 0)
 #### SET PREDICTOR MATRIX - -2 = ID random intercept, 1 = fixed effect, 2 = random effect
 pred<-ini$pred
-pred[which(pred[, "FIPSCODE"]==1),"FIPSCODE"]<- -2
-pred[which(pred[, "STATE"]==1),"STATE"]<- -2
+pred[which(pred[, "FIPSCODE"]==1),"FIPSCODE"]<- 0
+# pred[which(pred[, "STATE"]==1),"STATE"]<- -2
+# pred[which(pred==1)]<-2
 
 #### SET IMPUTATION METHODS
 meth<-ini$method
-meth[which(meth=="logreg")]<-"2l.bin"
+#meth[which(meth=="logreg")]<-"2l.bin"
 
 #### RUN TEST DATA
 pred<-mice(AFCARS.test, 
            method = meth, 
-           pred = ini$pred)
+           pred = pred,
+           maxit = 1)
 
 
 
