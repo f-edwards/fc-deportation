@@ -1,10 +1,10 @@
 #.rs.restartR()
 rm(list=ls())
 gc()
-library(tidyverse)
+library(tidyverse, lib.loc="./library")
 library(mice, lib.loc="./library")
-library(haven)
-library(pan)
+library(haven, lib.loc="./library")
+library(pan, lib.loc="./library")
 source("functions.r")
 
 pop<-read_csv("./data/seer-child-pop-2000-2016.csv")
@@ -31,14 +31,38 @@ AFCARS$HISORGIN<-ifelse(AFCARS$HISORGIN==3, NA,
 AFCARS$SEX<-ifelse(AFCARS$SEX == 1, "Male",
                    ifelse(AFCARS$SEX == 2, "Female",
                           NA))
-### coerce all rem reasons to logical
-index<-c(which(names(AFCARS)=="PHYABUSE"), which(names(AFCARS)=="HOUSING"))
-AFCARS[, index[1]:index[2]]<-lapply(AFCARS[, index[1]:index[2]], function(x) as.logical(x))
-### format all other variables
-AFCARS$Entered<-as.logical(AFCARS$Entered)
-AFCARS$Exited<-as.logical(AFCARS$Exited)
-AFCARS$DISREASN<-as.factor(AFCARS$DISREASN)
+AFCARS$abuse<-with(AFCARS, (PHYABUSE==1) | 
+                     (SEXABUSE==1) | 
+                     (AAPARENT==1) | 
+                     (DAPARENT==1) | 
+                     (AACHILD==1) | 
+                     (DACHILD==1) | 
+                     (CHILDIS==1) | 
+                     (PRTSDIED==1))
 
+
+AFCARS$incar<-with(AFCARS,
+                   (PRTSJAIL==1))
+
+
+AFCARS$incap_broad<-with(AFCARS,
+                         (PRTSJAIL==1) |
+                           (NOCOPE==1) |
+                           (ABANDMNT==1) |
+                           (RELINQSH==1))
+
+AFCARS$first_entry<- (AFCARS$Entered==1) &
+  (AFCARS$TotalRem==1) ### Entered is never missing, NA&FALSE = FALSE
+
+AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1, 
+                         TRUE, 
+                         ifelse((AFCARS$DISREASN==99) & (AFCARS$Exited == 1), 
+                                NA,
+                                FALSE))
+
+AFCARS<-AFCARS%>%
+  select(FY, STATE, FIPSCODE,
+         HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
 gc()
 
 AFCARS<-recode_FIPS(AFCARS)
@@ -130,46 +154,7 @@ q(save="no")
 ######################################################POST IMPUTATION PROCESSING
 ### Filter out cases with any cat not relevant, should give upper bound on incap removals 
 ### abuse _index<- [PHYABUSE, SEXABUSE, AAPARENT, DAPARENT, AACHILD, DACHILD, CHILDIS, PRTSDIED]
-AFCARS$abuse<-with(AFCARS, (PHYABUSE==1) | 
-                     (SEXABUSE==1) | 
-                     (AAPARENT==1) | 
-                     (DAPARENT==1) | 
-                     (AACHILD==1) | 
-                     (DACHILD==1) | 
-                     (CHILDIS==1) | 
-                     (PRTSDIED==1))
 
-
-AFCARS$incar<-with(AFCARS,
-                   (PRTSJAIL==1))
-
-
-AFCARS$incap_broad<-with(AFCARS,
-                         (PRTSJAIL==1) |
-                           (NOCOPE==1) |
-                           (ABANDMNT==1) |
-                           (RELINQSH==1))
-
-AFCARS$first_entry<- (AFCARS$Entered==1) &
-  (AFCARS$TotalRem==1) ### Entered is never missing, NA&FALSE = FALSE
-
-AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1, 
-                         TRUE, 
-                         ifelse((AFCARS$DISREASN==99) & (AFCARS$Exited == 1), 
-                                NA,
-                                FALSE))
-
-AFCARS<-AFCARS%>%
-  select(-PHYABUSE, -SEXABUSE, -AAPARENT, -DAPARENT, 
-         -AACHILD, -DACHILD, -CHILDIS, -PRTSDIED,
-         -NEGLECT, -CHBEHPRB)
-
-
-
-AFCARS<-AFCARS%>%
-  select(FY, STATE, FIPSCODE,
-         HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
-gc()
 
 
 
