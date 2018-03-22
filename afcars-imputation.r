@@ -5,6 +5,8 @@ library(tidyverse, lib.loc="./library")
 library(mice, lib.loc="./library")
 library(haven, lib.loc="./library")
 library(pan, lib.loc="./library")
+library(micemd, lib.loc="./library")
+
 source("functions.r")
 
 AFCARS<-read_csv("./data/afcars-deport00-16.csv", na=c("NULL", 99))
@@ -52,13 +54,8 @@ AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1 & AFCARS$Exited ==1,
                                 FALSE))
 
 AFCARS<-AFCARS%>%
-<<<<<<< HEAD
   select(FY, STATE, FIPSCODE,
          HISORGIN, AgeAtEnd, SEX, abuse, first_entry, reun_exit)
-=======
-  select(FY, STATE, FIPSCODE, SEX,
-         HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
->>>>>>> 60e54de1d71a108d1f4d0783e7f2765280b9f48f
 gc()
 
 AFCARS<-recode_FIPS(AFCARS)
@@ -114,71 +111,60 @@ AFCARS_merge<-left_join(AFCARS%>%
 ### https://gerkovink.github.io/miceVignettes/Multi_level/Multi_level_data.html
 #####################################################################################################################
 # 
-<<<<<<< HEAD
 # AFCARS_merge$STATE<-as.integer(AFCARS_merge$STATE)
 # AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
 
 ### for the amount of data we've got, multilevel lim n->inf = FE, just do FE
-=======
 AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
 AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
->>>>>>> 60e54de1d71a108d1f4d0783e7f2765280b9f48f
 AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
 AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
 AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
 AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
+AFCARS_merge$year<-as.integer(AFCARS_merge$year)
+### sqrt transform all pop variables for model fitting
+AFCARS_merge<-AFCARS_merge%>%
+  mutate_if(is.double, sqrt)
 
-samp<-sample(1:nrow(AFCARS_merge), 10000, replace=F)
-AFCARS.test<-AFCARS_merge[samp,]
+AFCARS.test<-AFCARS_merge%>%
+  filter(year==2010)
 
-AFCARS.test<-AFCARS.test
+AFCARS.test<-AFCARS.test[1:10000,]
 
-### try some simple logit models on hisorgin
-model.test<-na.omit(AFCARS.test)
-test1<-glm(HISORGIN~STATE
-           +AgeAtEnd+SEX+abuse+first_entry+reun_exit+cpop
-           , 
-           data=model.test, 
-           family = "binomial")
+set.seed(1)
 
-test2<-glm(HISORGIN~STATE
-           +AgeAtEnd+SEX+abuse+first_entry+reun_exit+sqrt(cpop)+
-             sqrt(cpnhw) + sqrt(cpnhb) + sqrt(cphisp) + sqrt(cpimmig) + 
-             sqrt(cpnoncit) + sqrt(cppoor)
-           , 
-           data=model.test, 
-           family = "binomial")
-
-
-ini<-mice(AFCARS.test, m=1, maxit = 0)
+ini<-mice(AFCARS.test, m=1, maxit = 0, pred=quickpred(AFCARS.test), seed = 1)
 #### SET PREDICTOR MATRIX - -2 = ID random intercept, 1 = fixed effect, 2 = random effect
 pred<-ini$pred
-<<<<<<< HEAD
-pred[, "FIPSCODE"]<-0
-pred[, 11:ncol(pred)]<-0
+# pred[, "FIPSCODE"]<-0
+# pred[, 11:ncol(pred)]<-0
 #### SET IMPUTATION METHODS
 meth<-ini$method
-=======
-pred[which(pred[, "FIPSCODE"]==1),"FIPSCODE"]<- 0
-pred["AgeAtEnd",]<-0
-pred[which(pred[, "STATE"]==1),"STATE"]<- -2
-AFCARS.test$STATE<-as.integer(AFCARS.test$STATE)
-pred[which(pred==1)]<-2
 
-#### SET IMPUTATION METHODS
-meth<-ini$method
-meth[["AgeAtEnd"]]<-""
-meth[which(meth=="logreg")]<-"2l.bin"
->>>>>>> 60e54de1d71a108d1f4d0783e7f2765280b9f48f
+#### RUN TEST DATA IN PARALLEL
+library(parallel)
+cores<-2
+cl<-makeCluster(cores)
+clusterSetRNGStream(cl, 1)
+clusterExport(cl, c("AFCARS.test", "pred", "meth"))
+clusterEvalQ(cl, library(mice, lib.loc="./library"))
 
-#### RUN TEST DATA
-imps<-mice(AFCARS.test, 
+imp_pars<-parLapply(cl, 
+                    1:cores,
+  fun = function(x)
+  {mice(AFCARS.test, 
            method = meth, 
-<<<<<<< HEAD
-           pred = ini$pred)
+           pred = pred,
+        m=2)})
+
+stopCluster(cl)
 
 
-
+out<-imp_pars[[1]]
+for(n in 2:length(imp_pars)){
+  out<-ibind(out,
+             imp_pars[[n]])
+}
 
 save.image("mice-test.Rdata")
 gc()
@@ -306,8 +292,3 @@ q(save="no")
 # #   ylab("mean hisorgin, solid, sd hisorgin, dashed")+
 # #   facet_wrap(~STATE)+
 # #   ggsave("state_hisorgin_imp.png")
-=======
-           pred = pred,
-           maxit = 1,
-           m=1)
->>>>>>> 60e54de1d71a108d1f4d0783e7f2765280b9f48f
