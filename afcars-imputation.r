@@ -62,7 +62,7 @@ AFCARS$reun_exit<-ifelse(AFCARS$DISREASN==1,
 
 AFCARS<-AFCARS%>%
   select(FY, STATE, FIPSCODE,
-         HISORGIN, AgeAtEnd, abuse, first_entry, reun_exit)
+         HISORGIN, AgeAtEnd, SEX, abuse, first_entry, reun_exit)
 gc()
 
 AFCARS<-recode_FIPS(AFCARS)
@@ -122,23 +122,45 @@ AFCARS_merge<-left_join(AFCARS%>%
 # 
 # AFCARS_merge$STATE<-as.integer(AFCARS_merge$STATE)
 # AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
+
+### for the amount of data we've got, multilevel lim n->inf = FE, just do FE
 AFCARS_merge$HISORGIN<-factor(AFCARS_merge$HISORGIN)
 AFCARS_merge$SEX<-factor(AFCARS_merge$SEX)
+AFCARS_merge$STATE<-factor(AFCARS_merge$STATE)
+AFCARS_merge$FIPSCODE<-factor(AFCARS_merge$FIPSCODE)
 
-samp<-sample(1:nrow(AFCARS), 10000, replace=F)
+samp<-sample(1:nrow(AFCARS_merge), 10000, replace=F)
 AFCARS.test<-AFCARS_merge[samp,]
+
+AFCARS.test<-AFCARS.test
+
+### try some simple logit models on hisorgin
+model.test<-na.omit(AFCARS.test)
+test1<-glm(HISORGIN~STATE
+           +AgeAtEnd+SEX+abuse+first_entry+reun_exit+cpop
+           , 
+           data=model.test, 
+           family = "binomial")
+
+test2<-glm(HISORGIN~STATE
+           +AgeAtEnd+SEX+abuse+first_entry+reun_exit+sqrt(cpop)+
+             sqrt(cpnhw) + sqrt(cpnhb) + sqrt(cphisp) + sqrt(cpimmig) + 
+             sqrt(cpnoncit) + sqrt(cppoor)
+           , 
+           data=model.test, 
+           family = "binomial")
+
+
 ini<-mice(AFCARS.test, m=1, maxit = 0)
 #### SET PREDICTOR MATRIX - -2 = ID random intercept, 1 = fixed effect, 2 = random effect
 pred<-ini$pred
-pred[which(pred[, "FIPSCODE"]==1),"FIPSCODE"]<- -2
-pred[which(pred[, "STATE"]==1),"STATE"]<- -2
-
+pred[, "FIPSCODE"]<-0
+pred[, 11:ncol(pred)]<-0
 #### SET IMPUTATION METHODS
 meth<-ini$method
-meth[which(meth=="logreg")]<-"2l.bin"
 
 #### RUN TEST DATA
-pred<-mice(AFCARS.test, 
+imps<-mice(AFCARS.test, 
            method = meth, 
            pred = ini$pred)
 
@@ -155,119 +177,119 @@ q(save="no")
 ### Filter out cases with any cat not relevant, should give upper bound on incap removals 
 ### abuse _index<- [PHYABUSE, SEXABUSE, AAPARENT, DAPARENT, AACHILD, DACHILD, CHILDIS, PRTSDIED]
 
-
-
-
-# write data
-out<-rbind(AFCARS%>%
-              mutate(.imp = "0"),
-            imp_dat_out%>%
-              select(-.id))
-
-write_csv(out, "afcars_imputed_state_fe.csv")
-
-dat<-read_csv("./afcars_imputed_state_fe.csv")
-
-cnty<-dat_temp%>%
-  group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
-  summarise(count=n())%>%
-  spread(report_source, count, fill=0, sep="_")%>%
-  ungroup()
-
-# ### diagnostic visuals
 # 
-# diag<-rbind(AFCARS%>%
-#               mutate(.imp = "6"),
+# 
+# 
+# # write data
+# out<-rbind(AFCARS%>%
+#               mutate(.imp = "0"),
 #             imp_dat_out%>%
 #               select(-.id))
 # 
+# write_csv(out, "afcars_imputed_state_fe.csv")
 # 
-# natl<-diag%>%
-#   group_by(.imp, FY)%>%
-#   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
-#             sd_abuse = sd(abuse, na.rm=TRUE),
-#             mean_first_entry = mean(first_entry, na.rm=TRUE),
-#             sd_first_entry = sd(first_entry, na.rm=TRUE),
-#             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
-#             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
-#             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
-#             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
+# dat<-read_csv("./afcars_imputed_state_fe.csv")
 # 
-# ggplot(natl, aes(y=mean_abuse, x=FY, col=.imp))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
-#     #     ymax = mean_abuse + 2*sd_abuse),
-#     alpha = 0.8)+
-#   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
-#   ylab("mean abuse, solid, sd abuse, dashed")
-#   ggsave("natl_abuse_imp.png")
-#   
-# ggplot(natl, aes(y=mean_first_entry, x=FY, col=.imp))+
-#     geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
-#       #     ymax = mean_first_entry + 2*sd_first_entry),
-#       alpha = 0.8)+
-#     geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
-#     ylab("mean first_entry, solid, sd first_entry, dashed")+
-#   ggsave("natl_first_entry_imp.png")
-#   
-# ggplot(natl, aes(y=mean_reun_exit, x=FY, col=.imp))+
-#     geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
-#       #     ymax = mean_reun_exit + 2*sd_reun_exit),
-#       alpha = 0.8)+
-#     geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
-#     ylab("mean reun_exit, solid, sd reun_exit, dashed")+
-#   ggsave("natl_reun_exit_imp.png")
-#   
-# ggplot(natl, aes(y=mean_hisorgin, x=FY, col=.imp))+
-#     geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
-#       #     ymax = mean_hisorgin + 2*sd_hisorgin),
-#       alpha = 0.8)+
-#     geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
-#     ylab("mean hisorgin, solid, sd hisorgin, dashed")+
-#   ggsave("natl_hisorgin_imp.png")
+# cnty<-dat_temp%>%
+#   group_by(.imp, FIPS, year, HISORGIN, report_source, state)%>%
+#   summarise(count=n())%>%
+#   spread(report_source, count, fill=0, sep="_")%>%
+#   ungroup()
 # 
-# state<-diag%>%
-#   group_by(.imp, FY, STATE)%>%
-#   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
-#             sd_abuse = sd(abuse, na.rm=TRUE),
-#             mean_first_entry = mean(first_entry, na.rm=TRUE),
-#             sd_first_entry = sd(first_entry, na.rm=TRUE),
-#             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
-#             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
-#             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
-#             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
-# 
-# ggplot(state, aes(y=mean_abuse, x=FY, col=.imp))+
-#   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
-#     #     ymax = mean_abuse + 2*sd_abuse),
-#     alpha = 0.8)+
-#   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
-#   ylab("mean abuse, solid, sd abuse, dashed")+
-#   facet_wrap(~STATE)+
-# ggsave("state_abuse_imp.png")
-# 
-# ggplot(state, aes(y=mean_first_entry, x=FY, col=.imp))+
-#   geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
-#     #     ymax = mean_first_entry + 2*sd_first_entry),
-#     alpha = 0.8)+
-#   geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
-#   ylab("mean first_entry, solid, sd first_entry, dashed")+
-#   facet_wrap(~STATE)+
-#   ggsave("state_first_entry_imp.png")
-# 
-# ggplot(state, aes(y=mean_reun_exit, x=FY, col=.imp))+
-#   geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
-#     #     ymax = mean_reun_exit + 2*sd_reun_exit),
-#     alpha = 0.8)+
-#   geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
-#   ylab("mean reun_exit, solid, sd reun_exit, dashed")+
-#   facet_wrap(~STATE)+
-#   ggsave("state_reun_exit_imp.png")
-# 
-# ggplot(state, aes(y=mean_hisorgin, x=FY, col=.imp))+
-#   geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
-#     #     ymax = mean_hisorgin + 2*sd_hisorgin),
-#     alpha = 0.8)+
-#   geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
-#   ylab("mean hisorgin, solid, sd hisorgin, dashed")+
-#   facet_wrap(~STATE)+
-#   ggsave("state_hisorgin_imp.png")
+# # ### diagnostic visuals
+# # 
+# # diag<-rbind(AFCARS%>%
+# #               mutate(.imp = "6"),
+# #             imp_dat_out%>%
+# #               select(-.id))
+# # 
+# # 
+# # natl<-diag%>%
+# #   group_by(.imp, FY)%>%
+# #   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
+# #             sd_abuse = sd(abuse, na.rm=TRUE),
+# #             mean_first_entry = mean(first_entry, na.rm=TRUE),
+# #             sd_first_entry = sd(first_entry, na.rm=TRUE),
+# #             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
+# #             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
+# #             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
+# #             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
+# # 
+# # ggplot(natl, aes(y=mean_abuse, x=FY, col=.imp))+
+# #   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
+# #     #     ymax = mean_abuse + 2*sd_abuse),
+# #     alpha = 0.8)+
+# #   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
+# #   ylab("mean abuse, solid, sd abuse, dashed")
+# #   ggsave("natl_abuse_imp.png")
+# #   
+# # ggplot(natl, aes(y=mean_first_entry, x=FY, col=.imp))+
+# #     geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
+# #       #     ymax = mean_first_entry + 2*sd_first_entry),
+# #       alpha = 0.8)+
+# #     geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
+# #     ylab("mean first_entry, solid, sd first_entry, dashed")+
+# #   ggsave("natl_first_entry_imp.png")
+# #   
+# # ggplot(natl, aes(y=mean_reun_exit, x=FY, col=.imp))+
+# #     geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
+# #       #     ymax = mean_reun_exit + 2*sd_reun_exit),
+# #       alpha = 0.8)+
+# #     geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
+# #     ylab("mean reun_exit, solid, sd reun_exit, dashed")+
+# #   ggsave("natl_reun_exit_imp.png")
+# #   
+# # ggplot(natl, aes(y=mean_hisorgin, x=FY, col=.imp))+
+# #     geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
+# #       #     ymax = mean_hisorgin + 2*sd_hisorgin),
+# #       alpha = 0.8)+
+# #     geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
+# #     ylab("mean hisorgin, solid, sd hisorgin, dashed")+
+# #   ggsave("natl_hisorgin_imp.png")
+# # 
+# # state<-diag%>%
+# #   group_by(.imp, FY, STATE)%>%
+# #   summarise(mean_abuse = mean(abuse, na.rm=TRUE),
+# #             sd_abuse = sd(abuse, na.rm=TRUE),
+# #             mean_first_entry = mean(first_entry, na.rm=TRUE),
+# #             sd_first_entry = sd(first_entry, na.rm=TRUE),
+# #             mean_reun_exit = mean(reun_exit, na.rm=TRUE),
+# #             sd_reun_exit = sd(reun_exit, na.rm=TRUE),
+# #             mean_hisorgin = mean(HISORGIN == "hispanic", na.rm=TRUE),
+# #             sd_hisorgin = sd(HISORGIN == "hispanic", na.rm=TRUE))
+# # 
+# # ggplot(state, aes(y=mean_abuse, x=FY, col=.imp))+
+# #   geom_line(#aes(ymin = mean_abuse - 2* sd_abuse,
+# #     #     ymax = mean_abuse + 2*sd_abuse),
+# #     alpha = 0.8)+
+# #   geom_line(aes(y=sd_abuse,  col=.imp), lty=2, alpha =0.8)+
+# #   ylab("mean abuse, solid, sd abuse, dashed")+
+# #   facet_wrap(~STATE)+
+# # ggsave("state_abuse_imp.png")
+# # 
+# # ggplot(state, aes(y=mean_first_entry, x=FY, col=.imp))+
+# #   geom_line(#aes(ymin = mean_first_entry - 2* sd_first_entry,
+# #     #     ymax = mean_first_entry + 2*sd_first_entry),
+# #     alpha = 0.8)+
+# #   geom_line(aes(y=sd_first_entry,  col=.imp), lty=2, alpha =0.8)+
+# #   ylab("mean first_entry, solid, sd first_entry, dashed")+
+# #   facet_wrap(~STATE)+
+# #   ggsave("state_first_entry_imp.png")
+# # 
+# # ggplot(state, aes(y=mean_reun_exit, x=FY, col=.imp))+
+# #   geom_line(#aes(ymin = mean_reun_exit - 2* sd_reun_exit,
+# #     #     ymax = mean_reun_exit + 2*sd_reun_exit),
+# #     alpha = 0.8)+
+# #   geom_line(aes(y=sd_reun_exit,  col=.imp), lty=2, alpha =0.8)+
+# #   ylab("mean reun_exit, solid, sd reun_exit, dashed")+
+# #   facet_wrap(~STATE)+
+# #   ggsave("state_reun_exit_imp.png")
+# # 
+# # ggplot(state, aes(y=mean_hisorgin, x=FY, col=.imp))+
+# #   geom_line(#aes(ymin = mean_hisorgin - 2* sd_hisorgin,
+# #     #     ymax = mean_hisorgin + 2*sd_hisorgin),
+# #     alpha = 0.8)+
+# #   geom_line(aes(y=sd_hisorgin,  col=.imp), lty=2, alpha =0.8)+
+# #   ylab("mean hisorgin, solid, sd hisorgin, dashed")+
+# #   facet_wrap(~STATE)+
+# #   ggsave("state_hisorgin_imp.png")
