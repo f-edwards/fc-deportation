@@ -1,6 +1,5 @@
 # source("read.r") #### to read in data files if starting from scratch
 
-library(data.table)
 library(tidyverse)
 library(haven)
 
@@ -11,49 +10,43 @@ library(haven)
 ###               2a) Deportation -> fewer reunification exits
 ###             3) Deportation -> lower community reporting
 
-#make ts for missingness by state
-# TS<-dat%>%
-#   group_by(STATE, FY)%>%
-#   summarise(total.cases=n(),
-#             prop.missing=sum(HISORGIN==3)/n(),
-#             prop.lat=sum(HISORGIN==1)/n())
-# 
-# ts<-ggplot(TS, aes(x=FY, y=prop.missing))+
-#   geom_line()+
-#   facet_wrap(~STATE)
-# 
-# ggsave("c:/Users/fre9/Documents/ts.pdf", ts)
+#### read in imputed afcars data
+files<-list.files("./data")
+imputeds<-paste("./data/", files[grep("imputed", files)], sep="")
 
-#make county level file - want child race/ethn, 1st entry, all entries, remrsn, rptsrc from ncands
+afcars<-read.csv(imputeds[1])
+afcars<-afcars
+for(i in 2:length(imputeds)){
+  temp<-read.csv(imputeds[i])
+  afcars<-afcars%>%
+    rbind(temp)
+}
 
 
 ################# for entries by first entry, by incapacitation
 ### lots of missing data on incap_index
-cnty_entries<-AFCARS%>%
-  group_by(STATE, FIPSCODE, FY, HISORGIN, incap_index, first_entry)%>%
-  filter(Entered==1)%>%
-  count()%>%
-  rename("entries"=n)%>%
-  rename(year=FY, FIPS=FIPSCODE)%>%
-  ungroup()%>%
-  filter(year>=2005, year<=2010)
 
-##### check against kids count data. MATCHES ON TX
-# test<-cnty_entries%>%
-#   group_by(STATE, year, HISORGIN)%>%
-#   summarise(entries=sum(entries)) 
 
-cnty287g<-read_dta("county287g.dta")
+cnty287g<-read_dta("./data/county287g.dta")
 cnty287g$countyid<-as.numeric(cnty287g$countyid)
 cnty287g$year<-as.numeric(cnty287g$year)
 cnty287g$c287active<-as.logical(cnty287g$c287active)
 cnty287g<-cnty287g%>%
   rename(FIPS=countyid)%>%
-  mutate(c287_everapplied=TRUE)
+  mutate(c287_everapplied=TRUE)%>%
+  select(-countyname)
+
+pop_puma<-read_dta("./data/countykids00to16.dta")
+pop_puma$FIPS<-as.numeric(pop_puma$countyid)
+pop_puma$year<-as.integer(pop_puma$year)
 
 ### join on all with ever application
-dat<-left_join(cnty_entries, cnty287g)
-dat<-left_join(dat, pop)
+dat<-left_join(afcars, pop_puma)
+### we lose some counties because of puma data
+table(cnty287g$FIPS%in%pop_puma$FIPS)
+unique(cnty287g[which(!(cnty287g$FIPS%in%pop_puma$FIPS)), "FIPS"])
+dat<-left_join(dat, cnty287g)
+
 
 ## line plot on entries pc by year by ever applied, by denied, by active
 
