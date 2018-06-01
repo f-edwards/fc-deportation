@@ -3,7 +3,7 @@ rm(list=ls())
 gc()
 library(tidyverse)
 library(haven)
-
+setwd("U:/fc-deportation")
 ### hypotheses: 1) Deportation -> more first entries
 ###               1a) Deportation -> more first entries, incapacitation cause
 ###               1b) Deportation -> more total entries
@@ -12,8 +12,8 @@ library(haven)
 ###             3) Deportation -> lower community reporting
 
 #### read in imputed afcars data
-files<-list.files("./imputations")
-imputeds<-paste("./imputations/", files[grep("cnty", files)], sep="")
+files<-list.files("./data")
+imputeds<-paste("./data/", files[grep("cnty", files)], sep="")
 
 afcars<-read_csv(imputeds[1])
 
@@ -76,23 +76,7 @@ dat<-left_join(afcars_out, pop_puma)
 ## Evaluate fc time series
 dat<-dat%>%
   mutate(ckid_nhisp=ckid - ckid_hisp)
-dat_natl<-dat%>%
-  group_by(.imp, year)%>%
-  summarise(abuse_h = sum(abuse_h)/sum(ckid_hisp),
-          first_entry_h = sum(first_entry_h)/sum(ckid_hisp),
-          caseload_h = sum(caseload_h)/sum(ckid_hisp),
-          abuse_nh = sum(abuse_nh)/sum(ckid_nhisp),
-          first_entry_nh = sum(first_entry_nh)/sum(ckid_nhisp),
-          caseload_nh = sum(caseload_nh)/sum(ckid_nhisp))
 
-
-
-TS0<-ggplot(dat_natl,
-            aes(x=year, group=.imp))+
-  geom_line(aes(y=caseload_h), col=2)+
-  geom_line(aes(y=caseload_nh), col=1)+
-  ggtitle("National caseloads, hispanic in red")+
-  ggsave("nationalTS.png")
 
   
               
@@ -101,6 +85,10 @@ TS0<-ggplot(dat_natl,
 # table(cnty287g$FIPS%in%pop_puma$FIPS)
 # unique(cnty287g[which(!(cnty287g$FIPS%in%pop_puma$FIPS)), "FIPS"])
 dat<-left_join(dat, cnty287g)
+
+
+
+write_csv(dat, "./data/dat_merge.csv")
 
 #################
 ## filter only cases with 287g apps
@@ -416,3 +404,20 @@ ES287cl<-ggplot(ESplot_sum%>%
   ggsave("es287neglect.png")
 
 
+dat_natl<-dat%>%
+  group_by(.imp, year)%>%
+  summarise(abuse_h = sum(abuse_h)/sum(ckid_hisp),
+            first_entry_h = sum(first_entry_h)/sum(ckid_hisp),
+            caseload_h = sum(caseload_h)/sum(ckid_hisp),
+            abuse_nh = sum(abuse_nh)/sum(ckid_nhisp),
+            first_entry_nh = sum(first_entry_nh)/sum(ckid_nhisp),
+            caseload_nh = sum(caseload_nh)/sum(ckid_nhisp))
+
+
+
+TS0<-ggplot(dat_natl,
+            aes(x=year, group=.imp))+
+  geom_line(aes(y=caseload_h), col=2)+
+  geom_line(aes(y=caseload_nh), col=1)+
+  ggtitle("National caseloads, hispanic in red")+
+  ggsave("nationalTS.png")

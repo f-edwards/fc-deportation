@@ -1,0 +1,138 @@
+---
+title: "Family complexity-287g Visuals"
+author: "FE"
+date: "May 23, 2018"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, cache=TRUE, warning=FALSE, cache.lazy = FALSE}
+library(tidyverse)
+library(haven)
+
+setwd("U:/fc-deportation")
+
+source("models_dd.r")
+```
+
+```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(haven)
+
+make_pred<-function(model){
+  race<-unique(puma_long$race)
+  fips<-4013
+  state<-"4"
+  years_to_active<- -3:5
+  year<-2008
+  c287_everactive<-TRUE
+  newdat<-data.frame(expand.grid(race, fips, years_to_active, year, c287_everactive))
+  names(newdat)<-c("race", "fips", "years_to_active", "year", "c287_everactive")
+  ### make never implement scenario, everactive false, years_to_active==-1
+  newdat_false<-expand.grid(race, fips, -1, 2008, FALSE)
+  names(newdat_false)<-c("race", "fips", "years_to_active", "year", "c287_everactive")
+  ### make df with rows equal to newdat
+  newdat_false<-map_df(seq_len(length(years_to_active)), ~newdat_false)
+  #### predict for each time group, for never implement
+  predTRUE<-predict(model, newdat)
+  predFALSE<-predict(model, newdat_false)
+  predDIFF<-predTRUE-predFALSE
+  newdatDIFF<-newdat
+  newdatDIFF$pred<-predDIFF
+  return(newdatDIFF)
+}
+
+```
+
+#Family complexity models - PUMA population data
+
+Below, I present model predictions from a series of models of family complexity outcomes as a function of 287g participation. Outcomes include:
+
+- ckhhsize
+- ckhhfams
+- cpgkid         
+- cpklivesmom    
+- cpknolivespar  
+- cpklivessinmom
+- cpklivessinpar 
+- cpknparhead    
+- cpknfamhead    
+- cpmixgen   
+
+I describe the model specification at the beginning of each section. Outcome variables are labeled on the y axis of all plots. 
+
+Counties that never implemented 287g have the year-to-287g variable set to a constant 0, and are included in the estimation of the 287g0yrs parameter
+
+These models estimate the effect of 287g on all family complexity outcomes with state and year fixed effects and within-state trends. All PUMA counties are included in these models, regardless of 287g participation. 
+
+The models take the form:
+
+$$\textrm{E}(\sqrt{outcome_{it}}) \sim \alpha_i + \delta_j + \sum_{t=j}^{g}\theta_{j}X_{ij} + \varepsilon_{ij} $$
+
+Alpha is a vector of county fixed effects, delta is a vector of event-relative time fixed effects (with non-implementing counties set to constant j= -1, j=0 is impementation year), X_ij is the interaction between ever-active and event-time.
+
+# ALL CASES, NO TRENDS
+```{r puma_all, echo=FALSE, message=FALSE, warning=FALSE}
+
+######################################################
+#### puma_models_1 by relative 287g implementation time
+plot_out<-list()
+
+for(i in 1:length(puma_models)){
+  var<-puma_outcomes[i]
+  newdatDIFF<-make_pred(puma_models[[i]])
+  plot_out[[i]]<-ggplot(newdatDIFF,
+         aes(x=years_to_active, y = pred))+
+    geom_point()+
+    geom_hline(yintercept=0, lty=2)+
+    geom_vline(xintercept=0, lty=2)+
+    facet_wrap(~race)+
+    ylab(var)
+}
+
+plot_out[[1]]
+plot_out[[2]]
+plot_out[[3]]
+plot_out[[4]]
+plot_out[[5]]
+plot_out[[6]]
+plot_out[[7]]
+plot_out[[8]]
+plot_out[[9]]
+plot_out[[10]]
+
+```
+
+# WITH COUNTY TRENDS, ALL CASES
+
+These models add a county*year trend to the models
+
+```{r puma_trends, echo=FALSE, message=FALSE, warning=FALSE}
+
+######################################################
+#### puma_models_1 by relative 287g implementation time
+plot_out<-list()
+
+for(i in 1:length(puma_models_trend)){
+  var<-puma_outcomes[i]
+  newdatDIFF<-make_pred(puma_models_trend[[i]])
+  plot_out[[i]]<-ggplot(newdatDIFF,
+         aes(x=years_to_active, y = pred))+
+    geom_point()+
+    geom_hline(yintercept=0, lty=2)+
+    geom_vline(xintercept=0, lty=2)+
+    facet_wrap(~race)+
+    ylab(var)
+}
+
+plot_out[[1]]
+plot_out[[2]]
+plot_out[[3]]
+plot_out[[4]]
+plot_out[[5]]
+plot_out[[6]]
+plot_out[[7]]
+plot_out[[8]]
+plot_out[[9]]
+plot_out[[10]]
+
+```

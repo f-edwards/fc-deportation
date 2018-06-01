@@ -161,7 +161,7 @@ gc()
 #### RUN TEST DATA IN PARALLEL
 #### PARALLEL IS NUTSO ON THE RAM - NOT VIABLE
 divisions<-unique(AFCARS_merge$DIVISION)
-for(i in 1:length(divisions)){
+for(i in 7:length(divisions)){
 
   dat_temp<-AFCARS_merge%>%
     filter(DIVISION==divisions[i])
@@ -188,9 +188,6 @@ for(i in 1:length(divisions)){
 
 
 # q(save="no")
-
-
-
 
 ###### merge imputations
 
