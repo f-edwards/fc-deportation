@@ -1,0 +1,192 @@
+---
+title: "Family complexity-287g Visuals"
+author: "FE"
+date: "May 23, 2018"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, cache=TRUE, warning=FALSE, cache.lazy = FALSE}
+library(tidyverse)
+library(haven)
+
+setwd("U:/fc-deportation")
+
+source("models_dd.r")
+```
+
+```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(sandwich)
+
+make_marg_eff<-function(model, data){
+  ### get all non- FE coefficients
+  model_coefs<-as.data.frame(summary(model)$coefficients[,1:2])
+  z<-c(grep("fips", row.names(model_coefs)), grep("\\(year\\)", row.names(model_coefs)))
+  model_coefs<-model_coefs[-z,]
+  betas<-data.frame(beta = model_coefs$Estimate)
+  row.names(betas)<-row.names(model_coefs)
+  
+  ### replace with chosen robust se estimation method
+  ### reduce vcov matrix to remove fixed effects
+  vc<-vcov(model)### ADD ROBUST VCOV ESTIMATION HERE
+  
+  z<-c(grep("fips", row.names(vc)), grep("\\(year\\)", row.names(vc)))
+  vc<-vc[-z,-z]
+  model_coefs[,2]<-sqrt(diag(vc))
+  
+    ### expected marginal effect is t_n - t_0, CI is 2*SE  
+  blk_est<-model_coefs[grep("black", row.names(model_coefs)),]
+  blk_est[,1]<-blk_est[,1]-blk_est[1,1]
+  
+  wht_est<-model_coefs[grep("white", row.names(model_coefs)),]
+  wht_est[,1]<-wht_est[,1]-wht_est[1,1]
+  
+  hisp_est<-model_coefs[grep("hispanic", row.names(model_coefs)),]
+  hisp_est[,1]<-hisp_est[,1]-hisp_est[1,1]
+  
+  ### bind, send out
+  blk_est<-blk_est%>%
+    mutate(race="Black",
+           years_to_active = c(0, -4:-1, 1:6))%>%
+    rename(diff_est = Estimate,
+           se = "Std. Error")
+  
+  wht_est<-wht_est%>%
+    mutate(race="White",
+           years_to_active = c(0, -4:-1, 1:6))%>%
+    rename(diff_est = Estimate,
+           se = "Std. Error")
+  
+  hisp_est<-hisp_est%>%
+    mutate(race="Hispanic",
+           years_to_active = c(0, -4:-1, 1:6))%>%
+    rename(diff_est = Estimate,
+           se = "Std. Error")
+  
+  diff_est<-bind_rows(blk_est, wht_est, hisp_est)
+  
+  return(diff_est)
+}
+
+### for each model
+
+```
+
+#Family complexity models - PUMA population data
+
+Below, I present model predictions from a series of models of family complexity outcomes as a function of 287g participation. Outcomes include:
+
+- ckhhsize
+- ckhhfams
+- cpgkid         
+- cpklivesmom    
+- cpknolivespar  
+- cpklivessinmom
+- cpklivessinpar 
+- cpknparhead    
+- cpknfamhead    
+- cpmixgen   
+
+I describe the model specification at the beginning of each section. Outcome variables are labeled on the y axis of all plots. 
+
+Counties that never implemented 287g have the year-to-287g variable set to a constant 0, and are included in the estimation of the 287g0yrs parameter
+
+These models estimate the effect of 287g on all family complexity outcomes with state and year fixed effects and within-state trends. All PUMA counties are included in these models, regardless of 287g participation. 
+
+The models take the form:
+
+$$\textrm{E}(\sqrt{outcome_{it}}) \sim \alpha_i + \delta_j + \sum_{t=j}^{g}\theta_{j}X_{ij} + \varepsilon_{ij} $$
+
+Alpha is a vector of county fixed effects, delta is a vector of event-relative time fixed effects (with non-implementing counties set to constant j= -1, j=0 is impementation year), X_ij is the interaction between ever-active and event-time.
+
+#STANDARD ERRORS
+
+Compare robust SE methods below. Note that CL-FIPS-YR-RACE std. errors are consistent with standard errors from comparable RE models.
+
+```{r}
+# test<-puma_models[[3]]
+# test_dat<-puma_model_data[[3]]
+vc<-list("standard" = vcov(test),
+         "sandwich" = sandwich(test),
+         "hc1" = vcovHC(test),
+         "CL-FIPS" = vcovCL(test, cluster = test_dat[, c("fips")], type = "HC1", fix=TRUE),
+         "CL-FIPS-YR" = vcovCL(test, cluster = test_dat[, c("fips", "year")], type = "HC1", fix=TRUE),
+         "CL-FIPS-YR-RACE" = vcovCL(test, cluster = test_dat[, c("fips", "year", "race")], type = "HC1", fix=TRUE))
+         #"HC" = vcovHC(test, type="HC1"))
+
+se<-function(vcov)sapply(vcov, function(x)round(sqrt(diag(x)),3))
+se(vc)[1:20,]
+
+```
+
+# ALL CASES, NO TRENDS
+```{r puma_all, echo=FALSE, message=FALSE, warning=FALSE}
+
+######################################################
+#### puma_models_1 by relative 287g implementation time
+plot_out<-list()
+
+for(i in 1:length(puma_models)){
+  var<-puma_outcomes[i]
+  newdatDIFF<-make_marg_eff(model, data)
+  plot_out_test[[i]]<-ggplot(newdatDIFF,
+         aes(x=years_to_active, y = diff_est))+
+    geom_point()+
+    geom_errorbar(aes(ymax = diff_est + 1.96*se, 
+                      ymin=diff_est - 1.96*se))+
+    geom_hline(yintercept=0, lty=2)+
+    geom_vline(xintercept=0, lty=2)+
+    facet_wrap(~race)
+  
+}
+
+
+plot_out[[1]]
+plot_out[[2]]
+plot_out[[3]]
+plot_out[[4]]
+plot_out[[5]]
+plot_out[[6]]
+plot_out[[7]]
+plot_out[[8]]
+plot_out[[9]]
+plot_out[[10]]
+
+```
+
+# WITH COUNTY TRENDS, ALL CASES
+
+These models add a county*year trend to the models
+
+```{r puma_trends, echo=FALSE, message=FALSE, warning=FALSE}
+
+######################################################
+#### puma_models_1 by relative 287g implementation time
+plot_out<-list()
+
+for(i in 1:length(puma_models_trend)){
+  model<-puma_models_trend[[i]]
+  var<-puma_outcomes[i]
+  newdatDIFF<-make_marg_eff(model, data)
+  plot_out_test[[i]]<-ggplot(newdatDIFF,
+         aes(x=years_to_active, y = diff_est))+
+    geom_point()+
+    geom_errorbar(aes(ymax = diff_est + 1.96*se, 
+                      ymin=diff_est - 1.96*se))+
+    geom_hline(yintercept=0, lty=2)+
+    geom_vline(xintercept=0, lty=2)+
+    facet_wrap(~race)
+}
+
+plot_out[[1]]
+plot_out[[2]]
+plot_out[[3]]
+plot_out[[4]]
+plot_out[[5]]
+plot_out[[6]]
+plot_out[[7]]
+plot_out[[8]]
+plot_out[[9]]
+plot_out[[10]]
+
+```

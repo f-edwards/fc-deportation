@@ -159,111 +159,116 @@ for(i in 1:length(puma_outcomes)){
   puma_model_data[[i]]$race<-relevel(puma_model_data[[i]]$race, ref="white, nh")
   ### make relative time dummies
 }
-# #######################################
-# ## read and format afcars data
-# #### read in imputed afcars data
-#   files<-list.files("./imputations")
-#   imputeds<-paste("./imputations/", files[grep("cnty", files)], sep="")
-#   
-#   afcars<-read_csv(imputeds[1])
-#   
-#   for(i in 2:length(imputeds)){
-#     temp<-read.csv(imputeds[i])
-#     afcars<-afcars%>%
-#       rbind(temp)
-#   }
-#   
-#   ### remove over 18s
-#   afcars<-afcars%>%
-#     filter(age_group!="adult")
-# 
-#   afcars<-afcars%>%
-#     filter(.imp==1)%>% ### for development, change later to !=0
-#     filter(race!="other")%>%
-#     rename(fips = fipscode)
-#   
-#   ### fill in zeroes
-#   afcars<-afcars%>%
-#     complete(.imp, year, race, age_group, nesting(state, fips), fill=list(entered = 0, abuse = 0,
-#                                                            first_entry = 0, reun_exit = 0,
-#                                                            incar = 0, incap_other = 0,
-#                                                            neglect = 0, caseload = 0))
-#    
-#   #### join to 287 and make time vars
-#   afcars<-afcars%>%
-#     left_join(cnty287g)%>%
-#     mutate(c287_everapplied = ifelse(is.na(c287_everapplied), FALSE,
-#                   c287_everapplied),
-#            c287_active = ifelse(c287start_yr>=year, TRUE, FALSE),
-#            c287_active = ifelse(is.na(c287_active), FALSE, c287_active))%>%
-#     mutate(c287_everactive = !(is.na(c287start_yr)),
-#            years_to_active = year - c287start_yr,
-#            c287time_minus34 = ifelse(is.na(c287start_yr), FALSE, years_to_active < -2 & years_to_active>-5),
-#            c287time_minus12 = ifelse(is.na(c287start_yr), FALSE, years_to_active < 0 & years_to_active>-3),
-#            c287time_0 = ifelse(is.na(c287start_yr), FALSE, years_to_active == 0),
-#            c287time_plus12 = ifelse(is.na(c287start_yr), FALSE, years_to_active > 0 & years_to_active <3),
-#            c287time_plus34 = ifelse(is.na(c287start_yr), FALSE, years_to_active > 2 & years_to_active < 5),
-#            c287time_plus56 = ifelse(is.na(c287start_yr), FALSE, years_to_active > 4 & years_to_active <7))
-#   
-#   
-#   
-#   #### afcars moves all nyc cases to manhattan, make correction in seer
-#   pop_mod<-pop%>%
-#     mutate(fips = ifelse(fips %in% c(36005, 36047, 36061, 36081, 36085), 36061, fips))%>%
-#     group_by(year, fips, race, age_group)%>%
-#     summarise(pop = sum(pop))
-#   
-#   afcars<-afcars%>%
-#     left_join(pop_mod)
-#   
-#   #### stop at 2012
-#   afcars<-afcars%>%
-#     filter(year<2013)
-#   
-#   ### convert to per capita
-#   afcars<-afcars%>%
-#     mutate(entered = entered / pop,
-#            caseload = caseload / pop,
-#            reun_exit = reun_exit / pop,
-#            first_entry = first_entry / pop,
-#            abuse = abuse / pop,
-#            neglect = neglect / pop,
-#            incar = incar / pop,
-#            incap_other = incap_other / pop)
-#   
-#   afcars_outcomes<-c("entered",
-#                      "caseload",
-#                      "reun_exit",
-#                      "first_entry",
-#                      "abuse",
-#                      "neglect",
-#                      "incar",
-#                      "incap_other")
-#   
-#   afcars_model_data<-list()
-#   
-#   for(i in 1:length(afcars_outcomes)){
-#     names_temp<-c("fips","state", "year", "race", "age_group", 
-#                   "c287_active", "c287_everapplied", "c287_everactive",
-#                   "c287time_minus34","c287time_minus12", "c287time_0", "c287time_plus12",
-#                   "c287time_plus34","c287time_plus56", 
-#                   afcars_outcomes[i])
-#     
-#     afcars_model_data[[i]]<-afcars%>%
-#       select(one_of(names_temp))
-#     names(afcars_model_data)[i]<-afcars_outcomes[i]
-#     names(afcars_model_data[[i]])[length(names(afcars_model_data[[i]]))]<-"outcome"
-#     ### for log transforms
-#     afcars_model_data[[i]]$outcome<-afcars_model_data[[i]]$outcome + 0.000001
-#   }
-###################### MISSINGS ON MERGE WITH SEER POP BECAUSE OF COURSE THERE ARE
 
 
 
-#### fix mismatches later
 
-# ### we lose some counties because of puma data
-# table(cnty287g$FIPS%in%pop_puma$FIPS)
-# unique(cnty287g[which(!(cnty287g$FIPS%in%pop_puma$FIPS)), "FIPS"])
+#######################################
+## read and format afcars data
+#### read in imputed afcars data
+
+files<-list.files("./imputations")
+imputeds<-paste("./imputations/", files[grep("cnty", files)], sep="")
+
+afcars<-read_csv(imputeds[1])
+
+for(i in 2:length(imputeds)){
+  temp<-read.csv(imputeds[i])
+  afcars<-afcars%>%
+    rbind(temp)
+}
+
+### remove over 18s
+afcars<-afcars%>%
+  filter(age_group!="adult")
+
+afcars<-afcars%>%
+  filter(.imp==1)%>% ### for development, change later to !=0
+  filter(race!="other")%>%
+  rename(fips = fipscode)
+
+### fill in zeroes
+afcars<-afcars%>%
+  complete(.imp, year, race, age_group, 
+           nesting(state, fips), 
+           fill=list(entered = 0, abuse = 0,
+                     first_entry = 0, reun_exit = 0,
+                     incar = 0, incap_other = 0,
+                     neglect = 0, caseload = 0))
+
+#### afcars moves all nyc cases to manhattan, make correction in seer
+pop_mod<-pop%>%
+  mutate(fips = ifelse(fips %in% c(36005, 36047, 36061, 36081, 36085), 36061, fips))%>%
+  group_by(year, fips, race, age_group)%>%
+  summarise(pop = sum(pop))
+
+afcars<-afcars%>%
+  left_join(pop_mod)
+
+### convert to per capita
+afcars<-afcars%>%
+  mutate(entered = entered / pop * 1000,
+         caseload = caseload / pop * 1000,
+         reun_exit_pct = reun_exit / caseload * 100,
+         first_entry = first_entry / pop * 1000,
+         abuse = abuse / pop * 1000,
+         neglect = neglect / pop * 1000,
+         incar = incar / pop * 1000,
+         incap_other = incap_other / pop * 1000)
+
+
+#### join to 287 and make time vars
+afcars<-afcars%>%
+  left_join(cnty287g)%>%
+  mutate(c287_everapplied = ifelse(is.na(c287_everapplied), "FALSE", 
+                                   c287_everapplied),
+         c287_active = ifelse(c287start_yr>=year, "TRUE", "FALSE"),
+         c287_active = ifelse(is.na(c287start_yr), "FALSE", c287_active))
+
+### make ever approved, time to implement variables
+### for comparison of time to implement to never active,
+### add 287everactive dummy
+afcars<-afcars%>%
+  mutate(c287_everactive = !(is.na(c287start_yr)),
+         years_to_active = year - c287start_yr,
+         years_to_active = ifelse(is.na(years_to_active), 0, years_to_active))
+### top and bottom code based on distribution of obseved
+afcars<-afcars%>%
+  mutate(years_to_active = ifelse(years_to_active< -4 , -4, years_to_active),
+         years_to_active = ifelse(years_to_active> 6, 6, years_to_active))
+
+afcars_outcomes<-c("entered",
+                   "caseload",
+                   "reun_exit",
+                   "first_entry",
+                   "abuse",
+                   "neglect",
+                   "incar",
+                   "incap_other")
+
+afcars_model_data<-list()
+
+for(i in 1:length(afcars_outcomes)){
+  names_temp<-c("fips","state", "year", 
+                "race", "age_group",
+                "years_to_active",
+                "c287_active", "c287_everapplied", 
+                "c287_everactive",
+                afcars_outcomes[i])
+
+  afcars_model_data[[i]]<-afcars%>%
+    select(one_of(names_temp))
+  names(afcars_model_data)[i]<-afcars_outcomes[i]
+  names(afcars_model_data[[i]])[length(names(afcars_model_data[[i]]))]<-"outcome"
+  afcars_model_data[[i]]<-afcars_model_data[[i]]%>%
+    filter(!(is.na(outcome)))
+  afcars_model_data[[i]]$years_to_active<-factor(afcars_model_data[[i]]$years_to_active,
+                                               levels = c(0, -4, -3, -2, -1,  1, 2, 3, 4, 5, 6))
+  afcars_model_data[[i]]$race<-factor(afcars_model_data[[i]]$race)
+  afcars_model_data[[i]]$race<-relevel(afcars_model_data[[i]]$race, ref="white, nh")
+  
+}
+##################### MISSINGS ON MERGE WITH SEER POP BECAUSE OF COURSE THERE ARE
+
 
 

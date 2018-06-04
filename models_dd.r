@@ -36,90 +36,92 @@ source("models_read.r")
 ### with and w/o linear, foster care models
 ### use google trends data to get at changes in search related to deportation / ice
 
+puma_models<-lapply(puma_model_data,
+                    function(x){
+                      lm((outcome) ~ - 1 +
+                           race:years_to_active+
+                           race:factor(year) + 
+                           race:factor(fips),
+                         data=x)
+                    })
 
-### do a hand prediction on these...
-### I think the plm models are working right...
-
-### rob se sandbox
-# library(sandwich)
-# vc_rob<-vcovCL(puma_models[[1]], cluster = puma_model_data[[1]]$fips)
-# se<-sqrt(diag(vc_rob))
-# weird results, mucccch lower standard errors
-# hist(summary(puma_models[[1]])$coefficients[,2]/se)
-# 
-# puma_models_nozeroes<-lapply(puma_model_data,
-#                              function(x){
-#                                lm(sqrt(outcome) ~
-#                                     race*(
-#                                       factor(fips) + 
-#                                         factor(years_to_active) +
-#                                         factor(c287_everactive)*factor(years_to_active)),
-#                                   data=x%>%
-#                                     filter(outcome!=0))
-#                              })
-# 
-
-#### ADD 
-
-# puma_models<-lapply(puma_model_data,
-#                     function(x){
-#                       lm((outcome) ~
-#                            race*(
-#                              factor(fips) +
-#                                factor(years_to_active) +
-#                                factor(year)),
-#                          data=x)
-#                     })
-
-# library(sandwich)
-# rob_vc<-vcovCL(puma_models[[1]], cluster = puma_model_data[[1]]$fips)
-# se<-sqrt(diag(rob_vc))
-# 
-# x<-puma_models[[1]]
-
-test_dat<-puma_model_data[[1]]
-
-
-test<-lm((outcome) ~ - 1 +
-          race:years_to_active+
-          race:factor(year) + 
-          race:factor(fips),
-         data=test_dat)
-
-
-### compare estimated se's
-vc<-list("standard" = vcov(test),
-         "basic" = sandwich(test),
-         "CL-1" = vcovCL(test, cluster = test_dat[, c("fips")], type = "HC1", fix=TRUE),
-         "CL-2" = vcovCL(test, cluster = test_dat[, c("fips", "race")], type = "HC1", fix=TRUE),
-         #"PC" = vcovPC(test, cluster = test_dat[, c("fips", "race")], order.by = test_dat$year, fix=TRUE),
-         "HC" = vcovHC(test, type="HC1"))
- 
-         
-se<-function(vcov)sapply(vcov, function(x)round(sqrt(diag(x)),3))
-head(se(vc))
-
-# 
 # puma_models_trend<-lapply(puma_model_data,
 #                           function(x){
-#                             lm((outcome) ~
-#                                  race*(
-#                                    factor(fips) * year +
-#                                      factor(years_to_active) +
-#                                      factor(year)),
+#                             lm((outcome) ~ - 1 +
+#                                  race:years_to_active+
+#                                  race:factor(year) + 
+#                                  race:factor(fips) + 
+#                                  race:factor(fips):year,
 #                                data=x)
 #                           })
 # 
+# puma_models_everapplied<-lapply(puma_model_data,
+#                     function(x){
+#                       lm((outcome) ~ - 1 +
+#                            race:years_to_active+
+#                            race:factor(year) + 
+#                            race:factor(fips),
+#                          data=x%>%
+#                            filter(c287_everapplied==TRUE))
+#                     })
 # 
-# 
-# 
-# puma_models_nozeroes_trend<-lapply(puma_model_data,
+# puma_models_trend_everapplied<-lapply(puma_model_data,
 #                           function(x){
-#                             lm(sqrt(outcome) ~
-#                                  race*(
-#                                    factor(fips) * year +
-#                                      factor(years_to_active) +
-#                                      factor(c287_everactive)*factor(years_to_active)),
+#                             lm((outcome) ~ - 1 +
+#                                  race:years_to_active+
+#                                  race:factor(year) + 
+#                                  race:factor(fips) + 
+#                                  race:factor(fips):year,
 #                                data=x%>%
-#                                  filter(outcome!=0))
+#                                  filter(c287_everapplied==TRUE))
 #                           })
+
+afcars_models<-lapply(afcars_model_data,
+                    function(x){
+                      lm((outcome) ~ - 1 +
+                           factor(age_group) +
+                           race:years_to_active +
+                           race:factor(year) + 
+                           race:factor(fips),
+                         data=x)
+                    })
+
+# afcars_models_trend<-lapply(afcars_model_data,
+#                           function(x){
+#                             lm((outcome) ~ - 1 +
+#                                  factor(age_group) +
+#                                  race:years_to_active+
+#                                  race:factor(year) + 
+#                                  race:factor(fips) + 
+#                                  race:factor(fips):year,
+#                                data=x)
+#                           })
+# 
+# afcars_models_everapplied<-lapply(afcars_model_data,
+#                                 function(x){
+#                                   lm((outcome) ~ - 1 +
+#                                        factor(age_group) +
+#                                        race:years_to_active+
+#                                        race:factor(year) + 
+#                                        race:factor(fips),
+#                                      data=x%>%
+#                                        filter(c287_everapplied==TRUE))
+#                                 })
+# 
+# afcars_models_trend_everapplied<-lapply(afcars_model_data,
+#                                       function(x){
+#                                         lm((outcome) ~ - 1 +
+#                                              factor(age_group) +
+#                                              race:years_to_active+
+#                                              race:factor(year) + 
+#                                              race:factor(fips) + 
+#                                              race:factor(fips):year,
+#                                            data=x%>%
+#                                              filter(c287_everapplied==TRUE))
+#                                       })
+
+#### pull out coefs, compute robust standard errors
+### 
+
+
+save.image("linear_models.RData")
