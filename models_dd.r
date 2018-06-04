@@ -5,7 +5,7 @@
 rm(list=ls()); gc()
 
 library(tidyverse)
-library(haven)
+library(sandwich)
 
 setwd("U:/fc-deportation")
 
@@ -61,26 +61,54 @@ source("models_read.r")
 
 #### ADD 
 
-puma_models<-lapply(puma_model_data,
-                    function(x){
-                      lm((outcome) ~
-                           race*(
-                             factor(fips) +
-                               factor(years_to_active) +
-                               factor(year)),
-                         data=x)
-                    })
+# puma_models<-lapply(puma_model_data,
+#                     function(x){
+#                       lm((outcome) ~
+#                            race*(
+#                              factor(fips) +
+#                                factor(years_to_active) +
+#                                factor(year)),
+#                          data=x)
+#                     })
+
+# library(sandwich)
+# rob_vc<-vcovCL(puma_models[[1]], cluster = puma_model_data[[1]]$fips)
+# se<-sqrt(diag(rob_vc))
+# 
+# x<-puma_models[[1]]
+
+test_dat<-puma_model_data[[1]]
 
 
-puma_models_trend<-lapply(puma_model_data,
-                          function(x){
-                            lm((outcome) ~
-                                 race*(
-                                   factor(fips) * year +
-                                     factor(years_to_active) +
-                                     factor(year)),
-                               data=x)
-                          })
+test<-lm((outcome) ~ - 1 +
+          race:years_to_active+
+          race:factor(year) + 
+          race:factor(fips),
+         data=test_dat)
+
+
+### compare estimated se's
+vc<-list("standard" = vcov(test),
+         "basic" = sandwich(test),
+         "CL-1" = vcovCL(test, cluster = test_dat[, c("fips")], type = "HC1", fix=TRUE),
+         "CL-2" = vcovCL(test, cluster = test_dat[, c("fips", "race")], type = "HC1", fix=TRUE),
+         #"PC" = vcovPC(test, cluster = test_dat[, c("fips", "race")], order.by = test_dat$year, fix=TRUE),
+         "HC" = vcovHC(test, type="HC1"))
+ 
+         
+se<-function(vcov)sapply(vcov, function(x)round(sqrt(diag(x)),3))
+head(se(vc))
+
+# 
+# puma_models_trend<-lapply(puma_model_data,
+#                           function(x){
+#                             lm((outcome) ~
+#                                  race*(
+#                                    factor(fips) * year +
+#                                      factor(years_to_active) +
+#                                      factor(year)),
+#                                data=x)
+#                           })
 # 
 # 
 # 

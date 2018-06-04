@@ -22,24 +22,145 @@ make_pred<-function(model){
   race<-unique(puma_long$race)
   fips<-4013
   state<-"4"
-  years_to_active<- -3:5
+  years_to_active<- -4:6
   year<-2008
   c287_everactive<-TRUE
   newdat<-data.frame(expand.grid(race, fips, years_to_active, year, c287_everactive))
   names(newdat)<-c("race", "fips", "years_to_active", "year", "c287_everactive")
   ### make never implement scenario, everactive false, years_to_active==-1
-  newdat_false<-expand.grid(race, fips, -1, 2008, FALSE)
+  newdat_false<-expand.grid(race, fips, 0, 2008, FALSE)
   names(newdat_false)<-c("race", "fips", "years_to_active", "year", "c287_everactive")
   ### make df with rows equal to newdat
   newdat_false<-map_df(seq_len(length(years_to_active)), ~newdat_false)
   #### predict for each time group, for never implement
-  predTRUE<-predict(model, newdat)
+  predTRUE<-predict(model, newdat, interval = "confidence")
   predFALSE<-predict(model, newdat_false)
   predDIFF<-predTRUE-predFALSE
   newdatDIFF<-newdat
-  newdatDIFF$pred<-predDIFF
+  newdatDIFF$pred<-predDIFF[,1]
+  newdatDIFF$lwr<-predDIFF[,2]
+  newdatDIFF$upr<-predDIFF[,3]
+  
   return(newdatDIFF)
 }
+
+make_pred_new<-function(model, data){
+  ### get all non- FE coefficients
+  model_coefs<-as.data.frame(summary(model)$coefficients[,1:2])
+  z<-c(grep("fips", row.names(model_coefs)), grep("\\(year\\)", row.names(model_coefs)))
+  model_coefs<-model_coefs[-z,]
+  betas<-data.frame(beta = model_coefs$Estimate)
+  row.names(betas)<-row.names(model_coefs)
+  ### replace with chosen robust se estimation method
+  ### reduce vcov matrix to remove fixed effects
+  vc<-vcov(model)
+  z<-c(grep("fips", row.names(vc)), grep("\\(year\\)", row.names(vc)))
+  vc<-vc[-z,-z]
+  model_coefs[,2]<-sqrt(diag(vc))
+  # make template for each scenario
+  scen_temp<-rep(F, nrow(betas))
+  names(scen_temp)<-row.names(model_coefs)
+  scen_temp<-as.data.frame(t(scen_temp))
+  years<-paste("factor(years_to_active)", -4:6, sep="")
+  blk_scens<-list()
+  # make year - 4 scen
+  blk_scens[[1]]<-scen_temp%>%
+    mutate(raceblack=TRUE)
+  for(i in 2:(length(years))){
+    yr<-years[i]
+    blk_scens[[i]]<-scen_temp
+    blk_scens[[i]][,"raceblack"]<-TRUE
+    blk_scens[[i]][,yr]<-TRUE    
+  }
+  names(blk_scens)<-as.character(-4:6)
+  
+  blk_preds<-lapply(blk_scens, function(x){
+   colSums(t(x) * betas)
+  })
+  #### white scenarios
+  wht_yr<-paste("racewhite, nh:", years, sep="")
+  wht_scens<-list()
+  wht_scens[[1]]<-scen_temp%>%
+    mutate('racewhite, nh'=TRUE)
+  for(i in 2:(length(years))){
+    yr<-years[i]
+    wht_scens[[i]]<-scen_temp
+    wht_scens[[i]][,"racewhite, nh"]<-TRUE
+    wht_scens[[i]][,yr]<-TRUE    
+    wht_scens[[i]][,wht_yr[i]]<-TRUE 
+  }
+  names(wht_scens)<-as.character(-4:6)
+  
+  wht_preds<-lapply(wht_scens, function(x){
+   colSums(t(x) * betas)
+  })
+  
+  #### hisp scenarios
+  hisp_yr<-paste("racehispanic:", years, sep="")
+  hisp_scens<-list()
+  hisp_scens[[1]]<-scen_temp%>%
+    mutate('racehispanic'=TRUE)
+  ## standard error for model estimate of b1+b2 with new vcov matrix, replicates(predict)
+  ## vc defined at top
+  ## var_b1,b2 = var(b1) + var(b2) + 2cov(b1,b2)
+  ## since reference (t=-4) is intercept only, e[y_-4 - y_0] = -b_0 - b_race0
+  se_scens<-rep(NA, length(hisp_scens))
+  index<-c(which(rownames(vc)==""), which(rownames(vc)==hisp_yr[1]))
+    ## var_b1,b2 = var(b1) + var(b2) + 2cov(b1,b2)
+  se_scens[1]<-sqrt(vc[index[1], index[1]] + 
+                        vc[index[2], index[2]] + 
+                        2 * vc[index[1], index[2]])
+  for(i in 2:(length(years))){
+    yr<-years[i]
+    hisp_scens[[i]]<-scen_temp
+    hisp_scens[[i]][,"racehispanic"]<-TRUE
+    hisp_scens[[i]][,yr]<-TRUE    
+    hisp_scens[[i]][,hisp_yr[i]]<-TRUE 
+    index<-c(which(rownames(vc)==yr), which(rownames(vc)==hisp_yr[i]))
+    ## var_b1,b2 = var(b1) + var(b2) + 2cov(b1,b2)
+    se_scens[i]<-sqrt(vc[index[1], index[1]] + 
+                        vc[index[2], index[2]] + 
+                        2 * vc[index[1], index[2]])
+  }
+  names(hisp_scens)<-as.character(-4:6)
+  
+  hisp_preds<-lapply(hisp_scens, function(x){
+   colSums(t(x) * betas)
+  })
+
+  make_diffs<-function(x){
+    output<-data.frame("beta" = rep(NA, length(x)), 
+                       "lower" = rep(NA, length(x)), 
+                       "upper" = rep(NA, length(x)))
+    for(i in 1:length(x)){
+      output[i, ]<-x[[i]]-x[["0"]]["beta"]
+    }
+    output$years_to_active<--4:6
+    return(output)
+  }
+  
+  preds_out<-make_diffs(hisp_preds)
+  preds_out$race<-"hispanic"
+  preds_temp<-make_diffs(blk_preds)
+  preds_temp$race<-"black"
+  preds_out<-rbind(preds_out, preds_temp)
+  preds_temp<-make_diffs(wht_preds)
+  preds_temp$race<-"white, nh"
+  preds_out<-rbind(preds_out, preds_temp)
+  
+}
+
+x<-model
+clcov<-vcov(x)
+newdata<-hisp_scens[[10]]
+newdata$fips<-"4013"
+newdata$year<-"2008"
+
+
+###uncertainty for race==hispanic, et==1, 
+
+vc<-vcov(model)
+se<-sqrt(diag(vc)["factor(years_to_active)1"] + diag(vc)["racehispanic:factor(years_to_active)1"])
 
 ```
 
@@ -77,17 +198,22 @@ Alpha is a vector of county fixed effects, delta is a vector of event-relative t
 #### puma_models_1 by relative 287g implementation time
 plot_out<-list()
 
+model<-test
+data<-test_dat
+
 for(i in 1:length(puma_models)){
   var<-puma_outcomes[i]
-  newdatDIFF<-make_pred(puma_models[[i]])
-  plot_out[[i]]<-ggplot(newdatDIFF,
+  newdatDIFF<-make_pred(model)
+  plot_out_test[[i]]<-ggplot(newdatDIFF,
          aes(x=years_to_active, y = pred))+
     geom_point()+
+    geom_errorbar(aes(ymax=upr, ymin=lwr))+
     geom_hline(yintercept=0, lty=2)+
     geom_vline(xintercept=0, lty=2)+
-    facet_wrap(~race)+
-    ylab(var)
+    facet_wrap(~race)
+  
 }
+
 
 plot_out[[1]]
 plot_out[[2]]

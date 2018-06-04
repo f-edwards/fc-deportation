@@ -60,8 +60,7 @@ pop_puma$year<-as.integer(pop_puma$year)
 ### exclude cases where sampling unit by race is <30
 ### only filter on hispanic sample for now, filtering on black sample 
 ### drastically cuts included counties
-pop_puma<-pop_puma%>%
-  filter(cukid_hisp>=30)
+pop_puma<-pop_puma
 
 #### DROP CUKID LESS THAN 30 FOR ALL GROUPS (ESP BLACK)
 
@@ -78,7 +77,8 @@ vars<-c("ckhhsize",
         "cpklivessinpar",
         "cpknparhead",
         "cpknfamhead",
-        "cpmixgen")
+        "cpmixgen",
+        "cukid")
 
 ### convert to long by race
 puma_temp<-list()
@@ -106,8 +106,10 @@ puma_long<-puma_temp[[1]]%>%
   left_join(puma_temp[[8]])%>%
   left_join(puma_temp[[9]])%>%
   left_join(puma_temp[[10]])%>%
+  left_join(puma_temp[[11]])%>%
   left_join(pop_puma%>%
-              select(countyid, year, cpunauth, cphisp, cpimmig))
+              select(countyid, year, cpunauth, cphisp, cpimmig))%>%
+  filter(cukid>30)### drop cases with v small samples
 
 puma_long<-puma_long%>%
   rename(fips = countyid)%>%
@@ -130,8 +132,12 @@ puma_long<-puma_long%>%
   mutate(c287_everactive = !(is.na(c287start_yr)),
          years_to_active = year - c287start_yr,
          years_to_active = ifelse(is.na(years_to_active), 0, years_to_active))
+### top and bottom code based on distribution of obseved
+puma_long<-puma_long%>%
+         mutate(years_to_active = ifelse(years_to_active< -4 , -4, years_to_active),
+         years_to_active = ifelse(years_to_active> 6, 6, years_to_active))
 
-puma_outcomes<-vars
+puma_outcomes<-vars[1:10] # don't want cukid in there
 
 puma_model_data<-list()
 
@@ -147,25 +153,11 @@ for(i in 1:length(puma_outcomes)){
   names(puma_model_data[[i]])[length(names(puma_model_data[[i]]))]<-"outcome"
   puma_model_data[[i]]<-puma_model_data[[i]]%>%
     filter(!(is.na(outcome)))
+  puma_model_data[[i]]$years_to_active<-factor(puma_model_data[[i]]$years_to_active,
+                                   levels = c(0, -4, -3, -2, -1,  1, 2, 3, 4, 5, 6))
+  puma_model_data[[i]]$race<-factor(puma_model_data[[i]]$race)
+  puma_model_data[[i]]$race<-relevel(puma_model_data[[i]]$race, ref="white, nh")
   ### make relative time dummies
-  puma_model_data[[i]]<-puma_model_data[[i]]%>%
-    mutate(minus_8=as.logical((years_to_active==-8)*c287_everactive),
-           minus_7=as.logical((years_to_active==-7)*c287_everactive),
-           minus_6=as.logical((years_to_active==-6)*c287_everactive),
-           minus_5=as.logical((years_to_active==-5)*c287_everactive),
-           minus_4=as.logical((years_to_active==-4)*c287_everactive),
-           minus_3=as.logical((years_to_active==-3)*c287_everactive),
-           minus_2=as.logical((years_to_active==-2)*c287_everactive),
-           minus_1=as.logical((years_to_active==-1)*c287_everactive),
-           plus_0=as.logical((years_to_active==0)*c287_everactive),
-           plus_1=as.logical((years_to_active==1)*c287_everactive),
-           plus_2=as.logical((years_to_active==2)*c287_everactive),
-           plus_3=as.logical((years_to_active==3)*c287_everactive),
-           plus_4=as.logical((years_to_active==4)*c287_everactive),
-           plus_5=as.logical((years_to_active==5)*c287_everactive),
-           plus_6=as.logical((years_to_active==6)*c287_everactive),
-           plus_7=as.logical((years_to_active==7)*c287_everactive)
-    )
 }
 # #######################################
 # ## read and format afcars data
