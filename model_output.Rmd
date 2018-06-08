@@ -11,7 +11,7 @@ library(haven)
 
 setwd("U:/fc-deportation")
 
-source("models_dd.r")
+load("linear_models.RData")
 ```
 
 ```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
@@ -104,8 +104,8 @@ Alpha is a vector of county fixed effects, delta is a vector of event-relative t
 Compare robust SE methods below. Note that CL-FIPS-YR-RACE std. errors are consistent with standard errors from comparable RE models.
 
 ```{r}
-# test<-puma_models[[3]]
-# test_dat<-puma_model_data[[3]]
+test<-puma_models[[3]]
+test_dat<-puma_model_data[[3]]
 vc<-list("standard" = vcov(test),
          "sandwich" = sandwich(test),
          "hc1" = vcovHC(test),
@@ -128,8 +128,10 @@ plot_out<-list()
 
 for(i in 1:length(puma_models)){
   var<-puma_outcomes[i]
+  model<-puma_models[[i]]
+  data<-puma_model_data[[i]]
   newdatDIFF<-make_marg_eff(model, data)
-  plot_out_test[[i]]<-ggplot(newdatDIFF,
+  plot_out[[i]]<-ggplot(newdatDIFF,
          aes(x=years_to_active, y = diff_est))+
     geom_point()+
     geom_errorbar(aes(ymax = diff_est + 1.96*se, 
@@ -161,32 +163,32 @@ These models add a county*year trend to the models
 ```{r puma_trends, echo=FALSE, message=FALSE, warning=FALSE}
 
 ######################################################
-#### puma_models_1 by relative 287g implementation time
-plot_out<-list()
-
-for(i in 1:length(puma_models_trend)){
-  model<-puma_models_trend[[i]]
-  var<-puma_outcomes[i]
-  newdatDIFF<-make_marg_eff(model, data)
-  plot_out_test[[i]]<-ggplot(newdatDIFF,
-         aes(x=years_to_active, y = diff_est))+
-    geom_point()+
-    geom_errorbar(aes(ymax = diff_est + 1.96*se, 
-                      ymin=diff_est - 1.96*se))+
-    geom_hline(yintercept=0, lty=2)+
-    geom_vline(xintercept=0, lty=2)+
-    facet_wrap(~race)
-}
-
-plot_out[[1]]
-plot_out[[2]]
-plot_out[[3]]
-plot_out[[4]]
-plot_out[[5]]
-plot_out[[6]]
-plot_out[[7]]
-plot_out[[8]]
-plot_out[[9]]
-plot_out[[10]]
+# #### puma_models_1 by relative 287g implementation time
+# plot_out<-list()
+# 
+# for(i in 1:length(puma_models_trend)){
+#   model<-puma_models_trend[[i]]
+#   var<-puma_outcomes[i]
+#   newdatDIFF<-make_marg_eff(model, data)
+#   plot_out_test[[i]]<-ggplot(newdatDIFF,
+#          aes(x=years_to_active, y = diff_est))+
+#     geom_point()+
+#     geom_errorbar(aes(ymax = diff_est + 1.96*se, 
+#                       ymin=diff_est - 1.96*se))+
+#     geom_hline(yintercept=0, lty=2)+
+#     geom_vline(xintercept=0, lty=2)+
+#     facet_wrap(~race)
+# }
+# 
+# plot_out[[1]]
+# plot_out[[2]]
+# plot_out[[3]]
+# plot_out[[4]]
+# plot_out[[5]]
+# plot_out[[6]]
+# plot_out[[7]]
+# plot_out[[8]]
+# plot_out[[9]]
+# plot_out[[10]]
 
 ```

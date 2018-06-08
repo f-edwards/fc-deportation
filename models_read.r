@@ -168,7 +168,7 @@ for(i in 1:length(puma_outcomes)){
 #### read in imputed afcars data
 
 files<-list.files("./imputations")
-imputeds<-paste("./imputations/", files[grep("cnty", files)], sep="")
+imputeds<-paste("./imputations/", files[grep("imputed_", files)], sep="")
 
 afcars<-read_csv(imputeds[1])
 
